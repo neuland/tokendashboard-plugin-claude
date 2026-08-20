@@ -1,0 +1,30 @@
+{
+  "name": "token-usage-plugin-claude",
+  "version": "0.7.0",
+  "description": "Claude Code hook plugin that captures token usage per model and forwards it to a configurable HTTP endpoint.",
+  "license": "MIT",
+  "bin": {
+    "token-usage-plugin-claude": "./updater.js"
+  },
+  "files": [
+    "hook.js",
+    "updater.js",
+    "statusline.js"
+  ],
+  "pluginFiles": [
+    "hook.js",
+    "statusline.js"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "register": "node updater.js install",
+    "unregister": "node updater.js uninstall",
+    "lint": "eslint hook.js updater.js statusline.js test",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "eslint": "^10.5.0"
+  }
+}
