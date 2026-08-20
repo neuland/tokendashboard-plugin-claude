@@ -183,7 +183,7 @@ const HOOK_DEFS = [
 
 // Matches both the current layout (`token-usage-plugin/hook.js`) and the legacy file
 // (`hooks/token-usage-plugin.js`). Requiring a separator/dot right after the name excludes
-// unrelated commands merely starting with it, e.g. `token-usage-plugin-exporter.js`
+// unrelated commands merely starting with it, e.g. `tokendashboard-plugin-exporter.js`
 // (see ADR-010, ADR-012).
 const HOOK_MATCH = /token-usage-plugin[/\\.]/;
 const isOwnCommand = cmd => typeof cmd === 'string' && HOOK_MATCH.test(cmd);
@@ -549,7 +549,7 @@ function run(command, version, apiBaseUrl, repoRawBaseUrl) {
     uninstall();
   } else {
     console.error(`Unknown command: ${command}`);
-    console.error('Usage: token-usage-plugin-claude install --api-base-url <url> --repo-raw-base-url <url> | uninstall');
+    console.error('Usage: tokendashboard-plugin-claude install --api-base-url <url> --repo-raw-base-url <url> | uninstall');
     process.exit(1);
   }
 }

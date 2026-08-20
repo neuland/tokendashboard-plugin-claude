@@ -1,4 +1,4 @@
-# token-usage-plugin-claude
+# tokendashboard-plugin-claude
 
 Claude Code hook plugin that captures token usage per model and forwards it to a configurable HTTP endpoint.
 
@@ -12,7 +12,7 @@ Claude Code hook plugin that captures token usage per model and forwards it to a
 ## Install
 
 ```bash
-npx git+https://github.com/neuland/token-usage-plugin-claude.git install --api-base-url <api-base-url> --repo-raw-base-url https://raw.githubusercontent.com/neuland/token-usage-plugin-claude/main
+npx git+https://github.com/neuland/tokendashboard-plugin-claude.git install --api-base-url <api-base-url> --repo-raw-base-url https://raw.githubusercontent.com/neuland/tokendashboard-plugin-claude/main
 ```
 
 Both flags are required on every install/reinstall — neither has a built-in default:
@@ -25,7 +25,7 @@ Neither value is read back from a previous `config.json` — pass both again on 
 ## Uninstall
 
 ```bash
-npx git+https://github.com/neuland/token-usage-plugin-claude.git uninstall
+npx git+https://github.com/neuland/tokendashboard-plugin-claude.git uninstall
 ```
 
 ## Statusline

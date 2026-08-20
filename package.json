@@ -1,10 +1,10 @@
 {
-  "name": "token-usage-plugin-claude",
+  "name": "tokendashboard-plugin-claude",
   "version": "0.7.0",
   "description": "Claude Code hook plugin that captures token usage per model and forwards it to a configurable HTTP endpoint.",
   "license": "MIT",
   "bin": {
-    "token-usage-plugin-claude": "./updater.js"
+    "tokendashboard-plugin-claude": "./updater.js"
   },
   "files": [
     "hook.js",

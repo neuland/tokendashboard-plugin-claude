@@ -5,7 +5,7 @@
 Distribute as an npm package via `npx` with a Git URL pointing at the repo:
 
 ```bash
-npx git+https://github.com/neuland/token-usage-plugin-claude.git install --api-base-url <url> --repo-raw-base-url <url>
+npx git+https://github.com/neuland/tokendashboard-plugin-claude.git install --api-base-url <url> --repo-raw-base-url <url>
 ```
 
 `updater.js` is the `bin` entry in `package.json` and handles install/uninstall. `--api-base-url` and `--repo-raw-base-url` are covered in ADR-016.

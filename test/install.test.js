@@ -130,7 +130,7 @@ test('install does not delete an unrelated hook that merely shares the name pref
   inUpdaterSandbox((updater, home) => {
     // given — a foreign hook whose command contains `token-usage-plugin` only as a prefix
     seedSettings(home, {
-      hooks: { Stop: [{ hooks: [{ type: 'command', command: 'node "$HOME/tools/token-usage-plugin-exporter.js"' }] }] },
+      hooks: { Stop: [{ hooks: [{ type: 'command', command: 'node "$HOME/tools/tokendashboard-plugin-exporter.js"' }] }] },
     });
 
     // when
@@ -139,7 +139,7 @@ test('install does not delete an unrelated hook that merely shares the name pref
     // then — the exporter survives alongside ours; the matcher is not a bare substring
     const settings = readSettings(home);
     const commands = settings.hooks.Stop.flatMap(e => e.hooks).map(h => h.command);
-    assert.ok(commands.some(c => c.includes('token-usage-plugin-exporter.js')), 'exporter preserved');
+    assert.ok(commands.some(c => c.includes('tokendashboard-plugin-exporter.js')), 'exporter preserved');
     assert.ok(commands.some(c => c.includes(hookRef(home))), 'our hook added');
     assert.equal(settings.hooks.Stop.length, 2);
   });

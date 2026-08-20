@@ -3,7 +3,7 @@
     "dockerComposeFile": "docker-compose.yaml",
     "service": "dev",
     "runServices": ["dev"],
-    "workspaceFolder": "/workspaces/token-usage-plugin-claude",
+    "workspaceFolder": "/workspaces/tokendashboard-plugin-claude",
     "overrideCommand": true,
     "features": {
         "ghcr.io/devcontainers/features/node:2.0.0": {

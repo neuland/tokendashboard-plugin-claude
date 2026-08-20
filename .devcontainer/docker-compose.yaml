@@ -1,12 +1,12 @@
-name: token-usage-plugin-claude
+name: tokendashboard-plugin-claude
 services:
   dev:
     build:
       context: .
-    container_name: token-usage-plugin-claude-dev
+    container_name: tokendashboard-plugin-claude-dev
     hostname: dev
     volumes:
-      - ..:/workspaces/token-usage-plugin-claude
+      - ..:/workspaces/tokendashboard-plugin-claude
       - ~/.claude:/home/vscode/.claude
       - ~/.claude.json:/tmp/host-claude.json:ro
     environment:

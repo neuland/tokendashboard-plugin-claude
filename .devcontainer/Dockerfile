@@ -9,6 +9,6 @@ RUN apt-get update && apt-get install -y \
     locales \
  && localedef -i en_US -f UTF-8 UTF-8
 
-WORKDIR /workspaces/token-usage-plugin-claude
+WORKDIR /workspaces/tokendashboard-plugin-claude
 
 USER vscode

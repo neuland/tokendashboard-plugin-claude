@@ -1,4 +1,4 @@
-# token-usage-plugin-claude
+# tokendashboard-plugin-claude
 
 Claude Code hook plugin that captures token usage per model and forwards it to an internal HTTP endpoint. Handles offline scenarios (VPN not active) via a local store-and-forward queue. Auto-updates silently on session start by fetching a fresh `updater.js` and running it (see ADR-012).
 
@@ -100,8 +100,8 @@ Conventions:
 ## Install / Uninstall
 
 ```bash
-npx git+https://github.com/neuland/token-usage-plugin-claude.git install --api-base-url <url> --repo-raw-base-url <url>
-npx git+https://github.com/neuland/token-usage-plugin-claude.git uninstall
+npx git+https://github.com/neuland/tokendashboard-plugin-claude.git install --api-base-url <url> --repo-raw-base-url <url>
+npx git+https://github.com/neuland/tokendashboard-plugin-claude.git uninstall
 ```
 
 Both `--api-base-url` and `--repo-raw-base-url` are required on every install/reinstall — neither
