@@ -120,6 +120,23 @@ Claude Code has a native plugin format (`.claude-plugin/plugin.json` + marketpla
 
 See [ADR-010](docs/decisions/010-home-relative-hook-path.md) for where this was first considered.
 
+## Security
+
+Beyond sending usage data to your own `--api-base-url`, this plugin **auto-updates
+itself by fetching and executing code**: once per 24 hours it downloads `updater.js`
+from your configured `--repo-raw-base-url` and runs it via `node -` (piped over
+stdin, never written to disk), which in turn may download and replace `hook.js` and
+`statusline.js`. This is by design (see `docs/decisions/` for the ADRs behind it),
+transport is HTTPS-only (a bare `http://` URL is rejected unless it points at
+`localhost`/`127.0.0.1`/`::1`), and a redirected response is never accepted. There is
+currently no additional signature or checksum pinning beyond that — the trust
+boundary is whoever controls the raw-file host you pass to `--repo-raw-base-url`.
+By default that's this repository's `main` branch, maintained by neuland — using it
+means trusting that we (and anyone whose PR we merge) never point it at a different
+endpoint or ship malicious code. If you'd rather not extend that trust, point
+`--repo-raw-base-url` at a fork you control instead — you'll then need to keep it in
+sync yourself. See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
+
 ## Development
 
 ```bash
