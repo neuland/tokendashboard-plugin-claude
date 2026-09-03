@@ -18,3 +18,6 @@ sudo chown -R vscode:nvm "$(npm config get prefix)/lib/node_modules"
 if [ ! -f "$HOME/.claude.json" ] && [ -f /tmp/host-claude.json ]; then
   cp /tmp/host-claude.json "$HOME/.claude.json"
 fi
+
+# install rtk
+curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh

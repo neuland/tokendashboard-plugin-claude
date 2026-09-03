@@ -4,6 +4,7 @@
     "service": "dev",
     "runServices": ["dev"],
     "workspaceFolder": "/workspaces/tokendashboard-plugin-claude",
+    "initializeCommand": "${localWorkspaceFolder}/.devcontainer/init.sh",
     "overrideCommand": true,
     "features": {
         "ghcr.io/devcontainers/features/node:2.0.0": {
