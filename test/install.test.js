@@ -7,7 +7,9 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const { inUpdaterSandbox, withTempHome, settingsPath, hookDest, statuslineDest, configPath } = require('./helpers.js');
+const {
+  inUpdaterSandbox, withTempHome, settingsPath, hookDest, statuslineDest, configPath, legacyPluginDir,
+} = require('./helpers.js');
 const { version } = require('../package.json');
 
 const UPDATER_PATH = require.resolve('../updater.js');
@@ -20,7 +22,7 @@ const EVENTS = ['Stop', 'SessionEnd', 'SessionStart', 'SubagentStop'];
 // lives under home, absolute otherwise (Windows / custom config dir).
 const hookRef = home => process.platform === 'win32'
   ? hookDest(home)
-  : '$HOME/.claude/token-usage-plugin/hook.js';
+  : '$HOME/.claude/tokendashboard-plugin/hook.js';
 
 const readSettings = home => JSON.parse(fs.readFileSync(settingsPath(home), 'utf8'));
 
@@ -64,7 +66,7 @@ test('install writes $HOME-relative commands on POSIX, not the absolute home pat
     const settings = readSettings(home);
     for (const event of EVENTS) {
       const cmd = settings.hooks[event][0].hooks[0].command;
-      assert.ok(cmd.includes('$HOME/.claude/token-usage-plugin/hook.js'), `${event} uses $HOME`);
+      assert.ok(cmd.includes('$HOME/.claude/tokendashboard-plugin/hook.js'), `${event} uses $HOME`);
       assert.ok(!cmd.includes(home), `${event} does not hardcode the absolute home path`);
     }
   });
@@ -128,7 +130,7 @@ test('install migrates a legacy (pre-0.4.0) settings entry to the new path', () 
 
 test('install does not delete an unrelated hook that merely shares the name prefix', () => {
   inUpdaterSandbox((updater, home) => {
-    // given — a foreign hook whose command contains `token-usage-plugin` only as a prefix
+    // given — a foreign hook whose command contains `tokendashboard-plugin` only as a prefix
     seedSettings(home, {
       hooks: { Stop: [{ hooks: [{ type: 'command', command: 'node "$HOME/tools/tokendashboard-plugin-exporter.js"' }] }] },
     });
@@ -142,6 +144,66 @@ test('install does not delete an unrelated hook that merely shares the name pref
     assert.ok(commands.some(c => c.includes('tokendashboard-plugin-exporter.js')), 'exporter preserved');
     assert.ok(commands.some(c => c.includes(hookRef(home))), 'our hook added');
     assert.equal(settings.hooks.Stop.length, 2);
+  });
+});
+
+// --- Pre-0.8.0 dir rename (see ADR-018) ---
+
+test('install collapses a pre-0.8.0 entry and the new one into a single hook per event', () => {
+  inUpdaterSandbox((updater, home) => {
+    // given — settings already carrying BOTH the old-dir command and the new-dir one, the
+    // exact double-hook state the rename must not leave behind
+    seedSettings(home, {
+      hooks: {
+        Stop: [
+          { hooks: [{ type: 'command', command: 'node "$HOME/.claude/token-usage-plugin/hook.js"' }] },
+          { hooks: [{ type: 'command', command: 'node "$HOME/.claude/tokendashboard-plugin/hook.js"' }] },
+        ],
+      },
+    });
+
+    // when
+    updater.install(version);
+
+    // then — one Stop entry, pointing at the new dir; the old-dir command is gone
+    const settings = readSettings(home);
+    assert.equal(settings.hooks.Stop.length, 1);
+    assert.ok(settings.hooks.Stop[0].hooks[0].command.includes(hookRef(home)));
+    assert.ok(!JSON.stringify(settings).includes('token-usage-plugin/hook.js'));
+  });
+});
+
+test('install carries the pre-0.8.0 user-id over so the dashboard identity survives', () => {
+  inUpdaterSandbox((updater, home) => {
+    // given — an old-dir user-id and no new-dir one
+    fs.mkdirSync(legacyPluginDir(home), { recursive: true });
+    fs.writeFileSync(path.join(legacyPluginDir(home), 'user-id'), 'uuid-from-0.7.0');
+
+    // when
+    updater.install(version);
+
+    // then
+    assert.equal(
+      fs.readFileSync(path.join(path.dirname(hookDest(home)), 'user-id'), 'utf8'),
+      'uuid-from-0.7.0',
+    );
+  });
+});
+
+test('uninstall clears the pre-0.8.0 config too (adoption cannot revive the install)', () => {
+  inUpdaterSandbox((updater, home) => {
+    // given — an installed plugin plus the old-dir config that adoption reads
+    updater.install(version);
+    fs.mkdirSync(legacyPluginDir(home), { recursive: true });
+    const legacyConfig = path.join(legacyPluginDir(home), 'config.json');
+    fs.writeFileSync(legacyConfig, JSON.stringify({ currentVersion: '0.7.0' }));
+
+    // when
+    updater.uninstall();
+
+    // then — both configs are gone, so no converge can adopt its way back in
+    assert.ok(!fs.existsSync(configPath(home)));
+    assert.ok(!fs.existsSync(legacyConfig));
   });
 });
 
@@ -243,7 +305,7 @@ test('install honors CLAUDE_CONFIG_DIR over ~/.claude', () => {
       updater.install(version);
 
       // then — hook, settings, and commands all live under the override, not ~/.claude
-      const customHook = path.join(configDir, 'token-usage-plugin', 'hook.js');
+      const customHook = path.join(configDir, 'tokendashboard-plugin', 'hook.js');
       const customSettings = path.join(configDir, 'settings.json');
       assert.equal(fs.existsSync(customHook), true);
       assert.equal(fs.existsSync(hookDest(home)), false, 'nothing written under ~/.claude');
@@ -598,7 +660,7 @@ test('install fails loudly when package.json has no version field', () => {
 
 const statuslineRef = home => process.platform === 'win32'
   ? statuslineDest(home)
-  : '$HOME/.claude/token-usage-plugin/statusline.js';
+  : '$HOME/.claude/tokendashboard-plugin/statusline.js';
 
 test('install copies the statusline script and registers it', () => {
   inUpdaterSandbox((updater, home) => {

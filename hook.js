@@ -12,7 +12,7 @@ const rawUrl = (base, file) => `${base.replace(/\/$/, '')}/${file}`;
 
 // Mirror Claude Code's config-dir resolution: CLAUDE_CONFIG_DIR overrides ~/.claude.
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
-const PLUGIN_DIR = path.join(CLAUDE_DIR, 'token-usage-plugin');
+const PLUGIN_DIR = path.join(CLAUDE_DIR, 'tokendashboard-plugin');
 // Canonical location; compared against __filename to detect a not-yet-migrated install
 // and force an immediate update (see ADR-012).
 const HOOK_DEST = path.join(PLUGIN_DIR, 'hook.js');

@@ -8,7 +8,7 @@ const os = require('os');
 // both files are pluginFiles that auto-update per-file, not in lockstep, so each must run
 // correctly against a version-mismatched sibling (see ADR-012).
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
-const PLUGIN_DIR = path.join(CLAUDE_DIR, 'token-usage-plugin');
+const PLUGIN_DIR = path.join(CLAUDE_DIR, 'tokendashboard-plugin');
 const QUEUE_DIR = path.join(PLUGIN_DIR, 'queue');
 const LOG_PATH = path.join(PLUGIN_DIR, 'error.log');
 const CONFIG_PATH = path.join(PLUGIN_DIR, 'config.json');
@@ -327,7 +327,7 @@ function buildStatusLine({
   // Arrows follow the network RX/TX convention: ↑ = sent (input tokens, uploaded to the
   // API), ↓ = received (output tokens, downloaded from the API)
   const marker = incomplete ? '≥ ' : '';
-  const priceLine = `token-usage-plugin v${version} · `
+  const priceLine = `tokendashboard-plugin v${version} · `
     + `${marker}${formatTokens(inputTokens)} ↑ / ${marker}${formatTokens(outputTokens)} ↓ · `
     + `${marker}${formatPrice(priceCents)}`;
 

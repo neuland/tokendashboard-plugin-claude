@@ -22,6 +22,17 @@ Both flags are required on every install/reinstall — neither has a built-in de
 
 Neither value is read back from a previous `config.json` — pass both again on every reinstall.
 
+### Upgrading from a version before 0.8.0
+
+Nothing to do — the plugin auto-updates. In 0.8.0 the data directory moved from
+`~/.claude/token-usage-plugin/` to `~/.claude/tokendashboard-plugin/`; the update carries your
+config and your pseudonymous user id across, repoints `settings.json`, and removes the old hook
+entries so no hook runs twice. Any not-yet-sent entries still queued under the old directory are
+discarded, and the old directory itself is left behind as an unreferenced leftover you can delete
+by hand. If you mount `~/.claude` into more than one environment (e.g. a devcontainer), run the
+install command in each so both switch over at the same time. See
+[ADR-018](docs/decisions/018-plugin-dir-rename.md).
+
 ## Uninstall
 
 ```bash
@@ -34,7 +45,7 @@ Installs a `statusLine` command that renders two lines:
 
 ```
 Sonnet 5 · 12.3k token · ● synced · context window: ▓▓▓▓░░░░░░ 42%
-token-usage-plugin v0.5.0 · 4.1k ↑ / 890 ↓ · $0.03  
+tokendashboard-plugin v0.8.0 · 4.1k ↑ / 890 ↓ · $0.03  
 ```
 
 Arrows follow the network RX/TX convention: ↑ = sent (input tokens, uploaded to the API), ↓ = received (output tokens, downloaded from the API)
@@ -57,13 +68,13 @@ A pre-existing `statusLine` entry (yours, or another plugin's) is left untouched
 ### Installing the statusline afterwards
 
 If you already had another `statusLine` configured when you installed this plugin, the install step skipped registering this one (and printed a note). 
-The `statusline.js` file itself was still copied to `~/.claude/token-usage-plugin/statusline.js` — you just need to point `statusLine` at it manually. 
+The `statusline.js` file itself was still copied to `~/.claude/tokendashboard-plugin/statusline.js` — you just need to point `statusLine` at it manually. 
 Claude stores its files in your home directory, /.claude. Add this to `~/.claude/settings.json`:
 
 ```json
 "statusLine": {
   "type": "command",
-  "command": "node \"$HOME/.claude/token-usage-plugin/statusline.js\""
+  "command": "node \"$HOME/.claude/tokendashboard-plugin/statusline.js\""
 }
 ```
 
@@ -72,10 +83,10 @@ This replaces whatever `statusLine` you had configured before — only do this i
 ### Removing the statusline, keeping the plugin
 
 To drop just the statusline without uninstalling the plugin, remove the `statusLine` entry from `~/.claude/settings.json` 
-(only if it points at `token-usage-plugin/statusline.js` — leave it alone otherwise). 
+(only if it points at `tokendashboard-plugin/statusline.js` — leave it alone otherwise). 
 Token capture (`Stop`/`SessionEnd`/`SessionStart`/`SubagentStop` hooks) is unaffected either way.
 
-Deleting `~/.claude/token-usage-plugin/statusline.js` itself is optional and not enough on its own: `statusline.js` is an auto-updated payload file, 
+Deleting `~/.claude/tokendashboard-plugin/statusline.js` itself is optional and not enough on its own: `statusline.js` is an auto-updated payload file, 
 so a deleted-but-still-referenced file would just get silently re-downloaded on the next update check. 
 Once the `statusLine` entry is gone from `settings.json`, nothing reads the file anymore either way.
 
