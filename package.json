@@ -19,7 +19,6 @@
     "node": ">=18"
   },
   "scripts": {
-    "register": "node updater.js install",
     "unregister": "node updater.js uninstall",
     "lint": "eslint hook.js updater.js statusline.js test",
     "test": "node --test test/*.test.js"

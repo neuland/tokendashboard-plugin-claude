@@ -150,8 +150,10 @@ sync yourself. See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
 
 ## Development
 
+Requires Node >= 20 (dev tooling; the installed plugin itself supports Node >=18).
+
 ```bash
-npm run register    # install the hook and register the hooks in ~/.claude/settings.json
+node updater.js install --api-base-url <url> --repo-raw-base-url <url>  # install the hook and register the hooks in ~/.claude/settings.json
 npm run unregister  # remove the hook and its registration
 npm run lint        # run ESLint
 npm test            # run the unit tests
