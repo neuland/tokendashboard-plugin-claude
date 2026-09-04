@@ -47,7 +47,9 @@ function loadHook() {
   return require(HOOK_PATH);
 }
 
-const pluginDir = home => path.join(home, '.claude', 'token-usage-plugin');
+const pluginDir = home => path.join(home, '.claude', 'tokendashboard-plugin');
+// Pre-0.8.0 data dir, kept only so migration tests can seed it (see ADR-018).
+const legacyPluginDir = home => path.join(home, '.claude', 'token-usage-plugin');
 const queueDir = home => path.join(pluginDir(home), 'queue');
 const settingsPath = home => path.join(home, '.claude', 'settings.json');
 // The hook now lives directly under the plugin dir (see ADR-012). hookDest is the
@@ -242,6 +244,7 @@ module.exports = {
   runHookProcess,
   runStatuslineProcess,
   pluginDir,
+  legacyPluginDir,
   queueDir,
   settingsPath,
   hookDest,

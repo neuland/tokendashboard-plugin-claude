@@ -41,7 +41,7 @@ report:
 - Ways to make the plugin exfiltrate more than the documented payload (see the
   README's "How it works" section for the exact JSON shape sent)
 - Local privilege escalation or arbitrary file write via the plugin's own files
-  under `~/.claude/token-usage-plugin/`
+  under `~/.claude/tokendashboard-plugin/`
 
 **Out of scope:** the security of a self-hosted `--api-base-url` backend deployment
 (that's the responsibility of whoever operates it — see the separate

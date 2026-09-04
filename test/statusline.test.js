@@ -440,7 +440,7 @@ test('readPluginVersion', async t => {
     const { home, cleanup } = withTempHome();
     try {
       const statusline = loadStatusline();
-      const configDir = path.join(home, '.claude', 'token-usage-plugin');
+      const configDir = path.join(home, '.claude', 'tokendashboard-plugin');
       fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ currentVersion: '0.7.2' }));
 
@@ -478,7 +478,7 @@ test('buildStatusLine', async t => {
     assert.equal(
       line,
       'Claude Sonnet 5 · 1.5k token · \x1b[34m●\x1b[0m synced · context window: ▓░░░░░░░░░ 10% \n'
-      + 'token-usage-plugin v1.2.3 · 100 ↑ / 20 ↓ · $2.50',
+      + 'tokendashboard-plugin v1.2.3 · 100 ↑ / 20 ↓ · $2.50',
     );
   });
 
@@ -494,7 +494,7 @@ test('buildStatusLine', async t => {
     assert.equal(
       line,
       'Claude Sonnet 5 · 500 token · \x1b[0m●\x1b[0m 3 queued · context window: ▓▓▓▓▓▓▓░░░ \x1b[95m65%\x1b[0m \n'
-      + 'token-usage-plugin v1.2.3 · 100 ↑ / 20 ↓ · $2.50',
+      + 'tokendashboard-plugin v1.2.3 · 100 ↑ / 20 ↓ · $2.50',
     );
   });
 
@@ -513,7 +513,7 @@ test('buildStatusLine', async t => {
     assert.equal(
       line,
       'Claude Sonnet 5 · 500 token · \x1b[31m●\x1b[0m 12 queued, 2d · context window: ▓▓▓▓▓▓▓▓▓░ \x1b[31m85% COMPACT!\x1b[0m \n'
-      + 'token-usage-plugin v1.2.3 · 100 ↑ / 20 ↓ · $2.50',
+      + 'tokendashboard-plugin v1.2.3 · 100 ↑ / 20 ↓ · $2.50',
     );
   });
 
@@ -529,7 +529,7 @@ test('buildStatusLine', async t => {
     assert.equal(
       line,
       'Claude Sonnet 5 · 500 token · \x1b[31m●\x1b[0m 2 queued, 1h · context window: ░░░░░░░░░░ 0% \n'
-      + 'token-usage-plugin v1.2.3 · 100 ↑ / 20 ↓ · $2.50',
+      + 'tokendashboard-plugin v1.2.3 · 100 ↑ / 20 ↓ · $2.50',
     );
   });
 
@@ -545,7 +545,7 @@ test('buildStatusLine', async t => {
     assert.equal(
       line,
       'Unknown model · 500 token · \x1b[34m●\x1b[0m synced · context window: ░░░░░░░░░░ 0% \n'
-      + 'token-usage-plugin v1.2.3 · 100 ↑ / 20 ↓ · $2.50',
+      + 'tokendashboard-plugin v1.2.3 · 100 ↑ / 20 ↓ · $2.50',
     );
   });
 
@@ -585,7 +585,7 @@ test('buildStatusLine', async t => {
     assert.equal(
       line,
       'Claude Sonnet 5 · ≥1.5k token · \x1b[34m●\x1b[0m synced · context window: ▓░░░░░░░░░ 10% \n'
-      + 'token-usage-plugin v1.2.3 · ≥ 100 ↑ / ≥ 20 ↓ · ≥ $2.50',
+      + 'tokendashboard-plugin v1.2.3 · ≥ 100 ↑ / ≥ 20 ↓ · ≥ $2.50',
     );
   });
 });
@@ -606,7 +606,7 @@ test('main() reads stdin JSON and writes the status line to stdout', () => {
     assert.equal(
       result.stdout,
       'Unknown model · 120 token · \x1b[34m●\x1b[0m synced · context window: ░░░░░░░░░░ 0% \n'
-      + 'token-usage-plugin vunknown · 100 ↑ / 20 ↓ · $0.00',
+      + 'tokendashboard-plugin vunknown · 100 ↑ / 20 ↓ · $0.00',
     );
   } finally {
     cleanup();
@@ -634,7 +634,7 @@ test('main() reads model and context_window fields from stdin', () => {
     assert.equal(
       result.stdout,
       'Claude Sonnet 5 · 0 token · \x1b[34m●\x1b[0m synced · context window: ▓▓▓▓▓▓▓░░░ \x1b[95m65%\x1b[0m \n'
-      + 'token-usage-plugin vunknown · 0 ↑ / 0 ↓ · $0.00',
+      + 'tokendashboard-plugin vunknown · 0 ↑ / 0 ↓ · $0.00',
     );
   } finally {
     cleanup();

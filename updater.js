@@ -16,10 +16,19 @@ const vm = require('vm');
 
 // Mirror Claude Code's config-dir resolution: CLAUDE_CONFIG_DIR overrides ~/.claude.
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
-const PLUGIN_DIR = path.join(CLAUDE_DIR, 'token-usage-plugin');
+const PLUGIN_DIR = path.join(CLAUDE_DIR, 'tokendashboard-plugin');
 const CONFIG_PATH = path.join(PLUGIN_DIR, 'config.json');
 const SETTINGS_PATH = path.join(CLAUDE_DIR, 'settings.json');
 const LOG_PATH = path.join(PLUGIN_DIR, 'error.log');
+
+// Pre-0.8.0 plugin dir. Distinct from LEGACY_HOOK_DEST below (the pre-0.4.0 single hook
+// FILE): this is the whole data dir the 0.4.0-0.7.x layout lived in. Only its config.json
+// and user-id are read here — the queue and the directory itself are deliberately left
+// behind rather than migrated (see ADR-018).
+const LEGACY_PLUGIN_DIR = path.join(CLAUDE_DIR, 'token-usage-plugin');
+const LEGACY_CONFIG_PATH = path.join(LEGACY_PLUGIN_DIR, 'config.json');
+const LEGACY_USER_ID_PATH = path.join(LEGACY_PLUGIN_DIR, 'user-id');
+const USER_ID_PATH = path.join(PLUGIN_DIR, 'user-id');
 
 // Installed hook lives under the plugin dir (ADR-012); LEGACY_HOOK_DEST is the pre-0.4.0
 // location migrated away from.
@@ -70,6 +79,60 @@ function loadConfig() {
 function saveConfig(config) {
   fs.mkdirSync(PLUGIN_DIR, { recursive: true });
   atomicWriteSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+}
+
+// --- Pre-0.8.0 adoption (see ADR-018) ---
+
+// The user-id is the dashboard's pseudonymous identity: without carrying it across the
+// rename every existing install would report as a brand-new user with no history. Only
+// ever copied when the new dir has none, so it can't clobber a fresh identity.
+function adoptLegacyUserId() {
+  try {
+    if (fs.existsSync(USER_ID_PATH) || !fs.existsSync(LEGACY_USER_ID_PATH)) {
+      return;
+    }
+    fs.mkdirSync(PLUGIN_DIR, { recursive: true });
+    atomicWriteSync(USER_ID_PATH, fs.readFileSync(LEGACY_USER_ID_PATH, 'utf8'));
+  } catch (err) {
+    logError('adoptLegacyUserId', err);
+  }
+}
+
+// Auto-update entry point for the rename: an existing install is only visible to converge
+// through config.json, and after the rename it is sitting in the OLD dir — so converge's
+// `currentVersion` guard would read "not installed" and every existing user would silently
+// never migrate. Adopting the old config first turns the migration into an ordinary
+// converge: files missing in the new dir, so they download, and settings drift, so they
+// repoint. Gated on the old config existing, so a machine that never had the plugin still
+// creates nothing (ADR-018).
+function adoptLegacyInstall() {
+  try {
+    if (fs.existsSync(CONFIG_PATH) || !fs.existsSync(LEGACY_CONFIG_PATH)) {
+      return;
+    }
+    let legacy;
+    try {
+      legacy = JSON.parse(fs.readFileSync(LEGACY_CONFIG_PATH, 'utf8'));
+    } catch {
+      return; // Unparseable old config — nothing trustworthy to adopt.
+    }
+    if (!legacy?.currentVersion) {
+      return; // Uninstalled (or never installed) under the old layout.
+    }
+    // Never carry the throttle stamp over: converge() re-stamps lastUpdateCheck itself
+    // once it reaches a terminal state, so dropping it here means a migration that fails
+    // mid-way isn't left sitting behind an inherited 24h throttle.
+    saveConfig({ ...legacy, lastUpdateCheck: undefined });
+    // A concurrent uninstall clears BOTH config files; if the old one vanished while we
+    // copied it, we just resurrected an install that was being torn down — undo (ADR-018).
+    if (!fs.existsSync(LEGACY_CONFIG_PATH)) {
+      fs.rmSync(CONFIG_PATH, { force: true });
+      return;
+    }
+    adoptLegacyUserId();
+  } catch (err) {
+    logError('adoptLegacyInstall', err);
+  }
 }
 
 // --- HTTP ---
@@ -181,11 +244,14 @@ const HOOK_DEFS = [
   { event: 'SubagentStop', command: SUBAGENT_COMMAND },
 ];
 
-// Matches both the current layout (`token-usage-plugin/hook.js`) and the legacy file
-// (`hooks/token-usage-plugin.js`). Requiring a separator/dot right after the name excludes
-// unrelated commands merely starting with it, e.g. `tokendashboard-plugin-exporter.js`
+// Matches the current layout (`tokendashboard-plugin/hook.js`), the pre-0.8.0 dir
+// (`token-usage-plugin/hook.js`) and the pre-0.4.0 file (`hooks/token-usage-plugin.js`).
+// Keeping the old name here is what collapses a post-rename settings.json down to a single
+// entry per event instead of running both hooks (see ADR-018). Requiring a separator/dot
+// right after the name excludes unrelated commands merely starting with it, e.g.
+// `tokendashboard-plugin-exporter.js` or the repo dir `tokendashboard-plugin-claude/`
 // (see ADR-010, ADR-012).
-const HOOK_MATCH = /token-usage-plugin[/\\.]/;
+const HOOK_MATCH = /(?:token-usage-plugin|tokendashboard-plugin)[/\\.]/;
 const isOwnCommand = cmd => typeof cmd === 'string' && HOOK_MATCH.test(cmd);
 
 function readSettings() {
@@ -252,6 +318,23 @@ function installStatusLine(settings) {
   settings.statusLine = { type: 'command', command: STATUSLINE_COMMAND };
 }
 
+// Converge's statusLine counterpart to hooksAreCurrent: drift is ONLY an entry that is
+// already ours but still points at a stale path (the pre-0.8.0 dir). Deliberately never
+// ADDS one — a missing entry is the documented "drop the statusline, keep the plugin"
+// state, and re-adding it would rewrite settings.json every single session; a foreign
+// entry stays untouched, same non-destructive rule as installStatusLine (ADR-018).
+function statusLineNeedsRepoint(settings) {
+  const cmd = settings.statusLine?.command;
+  return typeof cmd === 'string' && cmd.includes(STATUSLINE_MATCH) && cmd !== STATUSLINE_COMMAND;
+}
+
+function repointStatusLine(settings) {
+  if (statusLineNeedsRepoint(settings)) {
+    settings.statusLine = { type: 'command', command: STATUSLINE_COMMAND };
+  }
+  return settings;
+}
+
 function uninstallStatusLine(settings) {
   if (settings.statusLine?.command?.includes(STATUSLINE_MATCH)) {
     delete settings.statusLine;
@@ -272,6 +355,9 @@ function localPluginFiles() {
 
 function install(version, apiBaseUrl, repoRawBaseUrl) {
   fs.mkdirSync(PLUGIN_DIR, { recursive: true });
+
+  // Keep the dashboard identity stable across the pre-0.8.0 rename (ADR-018).
+  adoptLegacyUserId();
 
   // __dirname is only referenced here, never at module top level, so a stdin-run converge
   // (no meaningful __dirname, never calls install) is unaffected.
@@ -329,6 +415,12 @@ function uninstall() {
   if (fs.existsSync(CONFIG_PATH)) {
     fs.rmSync(CONFIG_PATH);
   }
+  // The pre-0.8.0 config is adoption's resurrection key — leaving it behind would let a
+  // racing converge re-adopt it and revive the install we are tearing down (ADR-018). The
+  // rest of the old dir (queue, the directory itself) is deliberately left alone.
+  if (fs.existsSync(LEGACY_CONFIG_PATH)) {
+    fs.rmSync(LEGACY_CONFIG_PATH);
+  }
 
   for (const file of localPluginFiles()) {
     const p = path.join(PLUGIN_DIR, file);
@@ -382,6 +474,10 @@ const rawUrl = (base, file) => `${base.replace(/\/$/, '')}/${file}`;
 // Fetch and reconcile the installation to the desired state. Idempotent: with correct
 // files and settings already in place it performs no writes (steady state).
 async function converge() {
+  // Before the guard below: a pre-0.8.0 install's config.json lives in the old dir, and
+  // without adopting it this would read "not installed" and never migrate (ADR-018).
+  adoptLegacyInstall();
+
   const config = loadConfig();
   if (!config.currentVersion) {
     return; // Not installed — nothing to converge.
@@ -438,8 +534,12 @@ async function converge() {
     // at a file that doesn't exist yet (ADR-012).
     const filesReady = pluginFiles.every(f => fs.existsSync(filePath(f)));
     const settings = readSettings();
-    if (filesReady && settings && !hooksAreCurrent(settings) && freshConfig.currentVersion) {
-      writeSettings(patchSettings(settings));
+    // statusLine is checked alongside the hooks because the pre-0.8.0 rename moved the path
+    // it points at too — without this an auto-updated install would keep rendering the old,
+    // now-frozen statusline.js against the abandoned old dir forever (ADR-018).
+    const settingsDrifted = settings && (!hooksAreCurrent(settings) || statusLineNeedsRepoint(settings));
+    if (filesReady && settingsDrifted && freshConfig.currentVersion) {
+      writeSettings(repointStatusLine(patchSettings(settings)));
     }
 
     // "Blocked by an older remote": a payload file is still missing AND the remote is
@@ -689,7 +789,10 @@ module.exports = {
   acquireUpdateLock,
   releaseUpdateLock,
   hooksAreCurrent,
+  statusLineNeedsRepoint,
   isValidPayload,
+  adoptLegacyInstall,
+  adoptLegacyUserId,
   install,
   uninstall,
   converge,
@@ -700,6 +803,7 @@ module.exports = {
   isPlausibleUrl,
   HOOK_DEST,
   LEGACY_HOOK_DEST,
+  LEGACY_PLUGIN_DIR,
   STATUSLINE_DEST,
   HOOK_MATCH,
 };

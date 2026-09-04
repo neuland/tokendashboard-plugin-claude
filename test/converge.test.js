@@ -6,7 +6,8 @@ const fs = require('fs');
 const path = require('path');
 
 const {
-  inUpdaterSandbox, inUpdaterSandboxAsync, stubFetch, pluginDir, settingsPath, hookDest, configPath,
+  inUpdaterSandbox, inUpdaterSandboxAsync, stubFetch, pluginDir, legacyPluginDir, settingsPath,
+  hookDest, configPath,
 } = require('./helpers.js');
 const { version } = require('../package.json');
 
@@ -491,5 +492,165 @@ test('converge strips a trailing slash from a configured repoRawBaseUrl to avoid
 // Guard against an accidental reference to configPath breaking (used by other suites).
 test('configPath helper points inside the plugin dir', () => {
   // given a base dir, when configPath derives the config location, then it sits in the plugin dir
-  assert.ok(configPath('/x').includes(path.join('token-usage-plugin', 'config.json')));
+  assert.ok(configPath('/x').includes(path.join('tokendashboard-plugin', 'config.json')));
+});
+
+// --- Pre-0.8.0 dir rename (see ADR-018) ---
+
+// An existing install is only visible to converge through config.json, which after the
+// rename sits in the OLD dir — adoption is what keeps the migration from silently never
+// happening for every already-installed user.
+
+const seedLegacyInstall = (home, config, userId) => {
+  fs.mkdirSync(legacyPluginDir(home), { recursive: true });
+  fs.writeFileSync(path.join(legacyPluginDir(home), 'config.json'), JSON.stringify(config, null, 2));
+  if (userId) {
+    fs.writeFileSync(path.join(legacyPluginDir(home), 'user-id'), userId);
+  }
+};
+
+test('converge adopts a pre-0.8.0 install and migrates it into the new plugin dir', async () => {
+  await inUpdaterSandboxAsync(async (updater, home) => {
+    // given — a 0.7.0 install: config + user-id in the old dir, settings pointing at the
+    // old hook path, and nothing at all in the new dir.
+    seedLegacyInstall(home, { currentVersion: '0.7.0', repoRawBaseUrl: TEST_RAW_BASE }, 'uuid-from-0.7.0');
+    fs.writeFileSync(settingsPath(home), JSON.stringify({
+      hooks: { Stop: [{ hooks: [{ type: 'command', command: 'node "$HOME/.claude/token-usage-plugin/hook.js"' }] }] },
+      statusLine: { type: 'command', command: 'node "$HOME/.claude/token-usage-plugin/statusline.js"' },
+    }, null, 2));
+    const f = stubFetch(routes({ pkg: pkgRes('0.8.0'), file: fileRes('// renamed hook') }));
+
+    // when
+    try {
+      await updater.converge();
+    } finally {
+      f.restore();
+    }
+
+    // then — payload landed in the new dir, version bumped, identity carried over
+    assert.equal(fs.readFileSync(hookDest(home), 'utf8'), '// renamed hook');
+    assert.equal(updater.loadConfig().currentVersion, '0.8.0');
+    assert.equal(fs.readFileSync(path.join(pluginDir(home), 'user-id'), 'utf8'), 'uuid-from-0.7.0');
+    // and — settings repointed to the new dir, with the old entry gone (no double hook)
+    const settings = JSON.parse(fs.readFileSync(settingsPath(home), 'utf8'));
+    assert.equal(settings.hooks.Stop.length, 1);
+    assert.ok(settings.hooks.Stop[0].hooks[0].command.includes('tokendashboard-plugin/hook.js'));
+    assert.ok(!JSON.stringify(settings).includes('token-usage-plugin/hook.js'));
+    // and — statusLine moved too, or it would keep rendering the frozen old script
+    assert.ok(settings.statusLine.command.includes('tokendashboard-plugin/statusline.js'));
+  });
+});
+
+test('converge does not adopt a pre-0.8.0 config left behind by an uninstall', async () => {
+  await inUpdaterSandboxAsync(async (updater, home) => {
+    // given — an old-dir config with no currentVersion (uninstalled under the old layout)
+    seedLegacyInstall(home, { apiBaseUrl: 'https://example.test' });
+    const f = stubFetch(routes({ pkg: pkgRes('0.8.0'), file: fileRes('// hook') }));
+
+    // when
+    try {
+      await updater.converge();
+    } finally {
+      f.restore();
+    }
+
+    // then — no request, and nothing created in the new dir
+    assert.equal(f.calls.length, 0);
+    assert.ok(!fs.existsSync(configPath(home)));
+  });
+});
+
+test('converge does not revive an install once uninstall has cleared both configs', async () => {
+  await inUpdaterSandboxAsync(async (updater, home) => {
+    // given — an adopted install (both configs present), then an uninstall clearing both.
+    // Leaving the old config behind here is what would let adoption resurrect the install.
+    seedLegacyInstall(home, { currentVersion: '0.7.0', repoRawBaseUrl: TEST_RAW_BASE });
+    updater.adoptLegacyInstall();
+    assert.equal(updater.loadConfig().currentVersion, '0.7.0'); // adopted
+    updater.uninstall();
+
+    // when
+    const f = stubFetch(routes({ pkg: pkgRes('0.8.0'), file: fileRes('// hook') }));
+    try {
+      await updater.converge();
+    } finally {
+      f.restore();
+    }
+
+    // then — no request, and adoption did not re-materialize config.json
+    assert.equal(f.calls.length, 0);
+    assert.ok(!fs.existsSync(configPath(home)));
+  });
+});
+
+test('converge leaves a foreign statusLine alone and writes nothing when already current', async () => {
+  await inUpdaterSandboxAsync(async (updater, home) => {
+    // given — a fully converged install whose statusLine belongs to someone else
+    updater.install(version, 'https://api.test', TEST_RAW_BASE);
+    const settings = JSON.parse(fs.readFileSync(settingsPath(home), 'utf8'));
+    settings.statusLine = { type: 'command', command: 'node "$HOME/my-bar.js"' };
+    fs.writeFileSync(settingsPath(home), JSON.stringify(settings, null, 2) + '\n');
+    const before = fs.readFileSync(settingsPath(home), 'utf8');
+
+    // when
+    const f = stubFetch(routes({ pkg: pkgRes(version), file: fileRes('// hook') }));
+    try {
+      await updater.converge();
+    } finally {
+      f.restore();
+    }
+
+    // then — steady state: settings.json is byte-identical, the foreign bar survives
+    assert.equal(fs.readFileSync(settingsPath(home), 'utf8'), before);
+    assert.ok(before.includes('my-bar.js'));
+  });
+});
+
+test('converge does not add a statusLine that the user removed on purpose', async () => {
+  await inUpdaterSandboxAsync(async (updater, home) => {
+    // given — converged install with the statusLine entry deleted (the documented
+    // "keep the plugin, drop the statusline" state)
+    updater.install(version, 'https://api.test', TEST_RAW_BASE);
+    const settings = JSON.parse(fs.readFileSync(settingsPath(home), 'utf8'));
+    delete settings.statusLine;
+    fs.writeFileSync(settingsPath(home), JSON.stringify(settings, null, 2) + '\n');
+    const before = fs.readFileSync(settingsPath(home), 'utf8');
+
+    // when
+    const f = stubFetch(routes({ pkg: pkgRes(version), file: fileRes('// hook') }));
+    try {
+      await updater.converge();
+    } finally {
+      f.restore();
+    }
+
+    // then — still absent, and no write happened
+    assert.equal(fs.readFileSync(settingsPath(home), 'utf8'), before);
+    assert.ok(!before.includes('statusLine'));
+  });
+});
+
+test('converge leaves settings pointing at the old path when the migration download fails', async () => {
+  await inUpdaterSandboxAsync(async (updater, home) => {
+    // given — a pre-0.8.0 install adopted, but the payload fetch fails (VPN dropped)
+    seedLegacyInstall(home, { currentVersion: '0.7.0', repoRawBaseUrl: TEST_RAW_BASE });
+    fs.writeFileSync(settingsPath(home), JSON.stringify({
+      hooks: { Stop: [{ hooks: [{ type: 'command', command: 'node "$HOME/.claude/token-usage-plugin/hook.js"' }] }] },
+    }, null, 2));
+    const before = fs.readFileSync(settingsPath(home), 'utf8');
+    const f = stubFetch(routes({ pkg: pkgRes('0.8.0'), file: { ok: false, status: 502, text: async () => '' } }));
+
+    // when
+    try {
+      await updater.converge();
+    } finally {
+      f.restore();
+    }
+
+    // then — no payload, settings still point at the still-working old hook, and no
+    // lastUpdateCheck stamp, so the next session retries instead of throttling
+    assert.ok(!fs.existsSync(hookDest(home)));
+    assert.equal(fs.readFileSync(settingsPath(home), 'utf8'), before);
+    assert.equal(updater.loadConfig().lastUpdateCheck, undefined);
+  });
 });
