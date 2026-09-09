@@ -12,7 +12,7 @@ Claude Code hook plugin that captures token usage per model and forwards it to a
 ## Install
 
 ```bash
-npx git+https://github.com/neuland/tokendashboard-plugin-claude.git install --api-base-url <api-base-url> --repo-raw-base-url https://raw.githubusercontent.com/neuland/tokendashboard-plugin-claude/main
+npx --allow-git=all git+https://github.com/neuland/tokendashboard-plugin-claude.git install --api-base-url <api-base-url> --repo-raw-base-url https://raw.githubusercontent.com/neuland/tokendashboard-plugin-claude/main
 ```
 
 Both flags are required on every install/reinstall — neither has a built-in default:
@@ -36,7 +36,7 @@ install command in each so both switch over at the same time. See
 ## Uninstall
 
 ```bash
-npx git+https://github.com/neuland/tokendashboard-plugin-claude.git uninstall
+npx --allow-git=all git+https://github.com/neuland/tokendashboard-plugin-claude.git uninstall
 ```
 
 ## Statusline
