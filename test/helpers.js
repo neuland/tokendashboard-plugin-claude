@@ -8,6 +8,7 @@ const { spawnSync } = require('child_process');
 const HOOK_PATH = require.resolve('../hook.js');
 const UPDATER_PATH = require.resolve('../updater.js');
 const STATUSLINE_PATH = require.resolve('../statusline.js');
+const REPORT_PATH = require.resolve('../report.js');
 
 // Create an isolated temp directory and point $HOME at it, so the plugin's
 // ~/.claude/* path constants (computed at module load from os.homedir()) resolve
@@ -56,10 +57,11 @@ const settingsPath = home => path.join(home, '.claude', 'settings.json');
 // canonical location; legacyHookDest is the pre-0.4.0 path we migrate away from.
 const hookDest = home => path.join(pluginDir(home), 'hook.js');
 const legacyHookDest = home => path.join(home, '.claude', 'hooks', 'token-usage-plugin.js');
-// statusline.js lives alongside hook.js under the plugin dir — a pluginFiles entry like
-// hook.js, auto-updated the same way, and installed/uninstalled by updater.js (see
-// ADR-012, CLAUDE.md).
+// statusline.js lives alongside hook.js under the plugin dir
 const statuslineDest = home => path.join(pluginDir(home), 'statusline.js');
+// report.js lives alongside hook.js/statusline.js under the plugin dir
+const reportDest = home => path.join(pluginDir(home), 'report.js');
+const localHistoryDbPath = home => path.join(pluginDir(home), 'local.sqlite');
 const configPath = home => path.join(pluginDir(home), 'config.json');
 const errorLogPath = home => path.join(pluginDir(home), 'error.log');
 const pricesPath = home => path.join(pluginDir(home), 'prices.json');
@@ -78,6 +80,28 @@ function inStatuslineSandbox(fn) {
   const statusline = loadStatusline();
   try {
     return fn(statusline, home);
+  } finally {
+    cleanup();
+  }
+}
+
+// Load a fresh copy of report.js so its module-level path constants pick up the
+// current $HOME. Must be called AFTER withTempHome().
+function loadReport() {
+  delete require.cache[REPORT_PATH];
+  return require(REPORT_PATH);
+}
+
+// Run fn against freshly loaded report.js AND hook.js modules sharing one isolated temp
+// $HOME — hook.js is only used to seed local.sqlite via its real writeLocalHistory/
+// openLocalHistoryDb.js.
+// fn receives (report, hook, home).
+function inReportSandbox(fn) {
+  const { home, cleanup } = withTempHome();
+  const hook = loadHook();
+  const report = loadReport();
+  try {
+    return fn(report, hook, home);
   } finally {
     cleanup();
   }
@@ -233,12 +257,14 @@ module.exports = {
   loadHook,
   loadUpdater,
   loadStatusline,
+  loadReport,
   inSandbox,
   inSandboxAsync,
   inFlushSandbox,
   inUpdaterSandbox,
   inUpdaterSandboxAsync,
   inStatuslineSandbox,
+  inReportSandbox,
   readQueue,
   stubFetch,
   runHookProcess,
@@ -250,6 +276,8 @@ module.exports = {
   hookDest,
   legacyHookDest,
   statuslineDest,
+  reportDest,
+  localHistoryDbPath,
   configPath,
   TEST_API_BASE_URL,
   errorLogPath,

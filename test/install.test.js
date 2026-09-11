@@ -401,6 +401,29 @@ test('the npx bin entry (node updater.js install) installs the hook', () => {
   }
 });
 
+test('the npx bin entry does not warn about Node version when the running Node satisfies engines.node', () => {
+  // given — an isolated $HOME; this repo's own dev/test Node already satisfies >=22.13
+  const { home, cleanup } = withTempHome();
+  try {
+    // when
+    const res = spawnSync(process.execPath, [
+      UPDATER_PATH, 'install',
+      '--api-base-url', 'https://example.test',
+      '--repo-raw-base-url', 'https://raw.githubusercontent.com/foo/bar/main',
+    ], {
+      encoding: 'utf8',
+      env: { ...process.env, HOME: home, USERPROFILE: home },
+    });
+
+    // then — install succeeds and prints no Node-version warning (can't spawn a real
+    // below-minimum Node here — the comparator itself is unit-tested in semver.test.js)
+    assert.equal(res.status, 0, res.stderr);
+    assert.doesNotMatch(res.stderr, /Local history\/report need Node/);
+  } finally {
+    cleanup();
+  }
+});
+
 test('the npx bin entry fails loudly without --api-base-url', () => {
   // given — an isolated $HOME, no --api-base-url passed (but --repo-raw-base-url is)
   const { home, cleanup } = withTempHome();

@@ -4,7 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 // semverGt moved to updater.js along with the rest of the update logic (see ADR-012).
-const { semverGt } = require('../updater.js');
+const { semverGt, satisfiesMinNodeVersion } = require('../updater.js');
 
 test('semverGt: greater patch / minor / major', () => {
   // given / when / then — each pair: left is the newer version
@@ -40,4 +40,13 @@ test('semverGt: minor outranks patch', () => {
 
   // then
   assert.equal(result, true);
+});
+
+test('satisfiesMinNodeVersion: rejects below-minimum, accepts at/above-minimum', () => {
+  // given / when / then — each pair: running version vs. the ">=22.13" engines.node range
+  assert.equal(satisfiesMinNodeVersion('v18.20.4', '>=22.13'), false);
+  assert.equal(satisfiesMinNodeVersion('v20.11.0', '>=22.13'), false);
+  assert.equal(satisfiesMinNodeVersion('v22.12.0', '>=22.13'), false);
+  assert.equal(satisfiesMinNodeVersion('v22.13.0', '>=22.13'), true);
+  assert.equal(satisfiesMinNodeVersion('v24.1.0', '>=22.13'), true);
 });

@@ -90,6 +90,19 @@ Deleting `~/.claude/tokendashboard-plugin/statusline.js` itself is optional and 
 so a deleted-but-still-referenced file would just get silently re-downloaded on the next update check. 
 Once the `statusLine` entry is gone from `settings.json`, nothing reads the file anymore either way.
 
+## Local history & reports
+
+Besides the entries sent to your backend, the plugin keeps a local, per-turn usage history in `~/.claude/tokendashboard-plugin/local.sqlite` — queryable entirely offline, never sent anywhere. 
+Generate a Markdown report with:
+
+```bash
+node ~/.claude/tokendashboard-plugin/report.js --weekly    # or --monthly
+node ~/.claude/tokendashboard-plugin/report.js --branches [--from YYYY-MM-DD] [--to YYYY-MM-DD]
+```
+
+This needs Node 22.13+ (`node:sqlite`) in whichever terminal Claude Code actually runs in — checked fresh on every session, independent of the Node version used to install or update the plugin. 
+On an older Node, everything else (queue sync, statusline) keeps working as usual; local history and `report.js` just stay inactive, and `install` prints a note about it.
+
 ## How it works
 
 Four hooks are registered in `~/.claude/settings.json`:
@@ -150,7 +163,7 @@ sync yourself. See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
 
 ## Development
 
-Requires Node >= 20 (dev tooling; the installed plugin itself supports Node >=18).
+Requires Node >= 22.13 (dev tooling; the installed plugin runs on older Node too — see [Local history & reports](#local-history--reports) above).
 
 ```bash
 node updater.js install --api-base-url <url> --repo-raw-base-url <url>  # install the hook and register the hooks in ~/.claude/settings.json

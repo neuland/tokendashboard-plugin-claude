@@ -164,6 +164,25 @@ function semverGt(a, b) {
   return a3 > b3;
 }
 
+// Checks a running Node version (e.g. "v24.1.0") against a package.json-style
+// `engines.node` range of the form ">=X.Y[.Z]" (e.g. ">=22.13"). Only ">=" ranges are
+// supported — this repo only ever writes that shape. Reuses semverGt rather than adding a
+// range-parsing dependency; pads missing patch components with 0 so "22.13" compares
+// correctly against a full "22.13.0"-shaped version.
+function satisfiesMinNodeVersion(current, range) {
+  const min = String(range ?? '').replace(/^>=\s*/, '');
+  const pad = v => {
+    const parts = String(v).replace(/^v/, '').split('.');
+    while (parts.length < 3) {
+      parts.push('0');
+    }
+    return parts.slice(0, 3).join('.');
+  };
+  const c = pad(current);
+  const m = pad(min);
+  return c === m || semverGt(c, m);
+}
+
 // --- Update lock ---
 
 function isProcessAlive(pid) {
@@ -749,6 +768,21 @@ async function main() {
       console.error('package.json has no version field — cannot install');
       process.exit(1);
     }
+    // Non-blocking: install always copies the same files regardless of the running Node
+    // (a plain fs.copyFileSync, see install() below) — it never exit(1)s or skips
+    // run()/install() over this. Local history/report's Node requirement is a pure
+    // per-execution runtime check (node:sqlite, checked fresh every time a hook runs),
+    // not something baked in at install time — re-running install under a newer Node
+    // fixes nothing by itself, so the message must not imply that (see ADR-019).
+    if (!satisfiesMinNodeVersion(process.version, pkg.engines?.node)) {
+      console.error(
+        `Note: installed successfully. Local history/report need Node ` +
+        `${pkg.engines?.node ?? '>=22.13'} (node:sqlite support) in whichever terminal ` +
+        `Claude Code actually runs in — that's checked fresh every time, independently ` +
+        `of the Node version used for this install (you're on ${process.version} now). ` +
+        `Everything else (queue sync, statusline) works regardless of Node version.`
+      );
+    }
     apiBaseUrl = parseApiBaseUrlArg(args);
     repoRawBaseUrl = parseRepoUrlArg(args);
     // Both required on EVERY install/reinstall, never read back from config.json (ADR-016).
@@ -785,6 +819,7 @@ module.exports = {
   loadConfig,
   saveConfig,
   semverGt,
+  satisfiesMinNodeVersion,
   isProcessAlive,
   acquireUpdateLock,
   releaseUpdateLock,
