@@ -2,6 +2,19 @@
 
 Claude Code hook plugin that captures token usage per model and forwards it to a configurable HTTP endpoint.
 
+Part of a system that measures a company's token usage.
+It requires the backend, the frontend and at least one plugin that sends the data.  
+The backend can be found here:  
+https://github.com/neuland/tokendashboard-backend  
+the frontend here:  
+https://github.com/neuland/tokendashboard-frontend  
+and the other plugins here:  
+Copilot: https://github.com/neuland/tokendashboard-plugin-copilot  
+OpenCode: https://github.com/neuland/tokendashboard-plugin-opencode
+
+## Documentation
+See [docs/decisions](docs/decisions) for business/domain decisions.
+
 ## Features
 
 - Captures input/output tokens and cache tokens per session turn and model
