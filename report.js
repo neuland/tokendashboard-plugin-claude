@@ -40,8 +40,8 @@ const PERIOD_REPORT_QUERY = `
     COUNT(*) AS entries,
     SUM(input_tokens) AS input_tokens,
     SUM(output_tokens) AS output_tokens,
-    SUM(cache_read_tokens + ephemeral_5m_tokens + ephemeral_1h_tokens) AS cache_read_tokens,
     SUM(cache_write_tokens) AS cache_write_tokens,
+    SUM(cache_read_tokens + ephemeral_5m_tokens + ephemeral_1h_tokens) AS cache_read_tokens,
     SUM(price_cents) AS price_cents
   FROM usage_entries
   GROUP BY period, project, branch
@@ -146,8 +146,8 @@ const BRANCH_REPORT_COLUMNS = [
   { header: 'entries', value: row => row.entries },
   { header: 'in', value: row => row.input_tokens },
   { header: 'out', value: row => row.output_tokens },
-  { header: 'cache_read', value: row => row.cache_read_tokens },
   { header: 'cache_write', value: row => row.cache_write_tokens },
+  { header: 'cache_read', value: row => row.cache_read_tokens },
   { header: 'price', value: row => formatCents(row.price_cents) },
 ];
 
