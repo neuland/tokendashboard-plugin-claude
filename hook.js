@@ -214,8 +214,7 @@ function openLocalHistoryDb() {
 
 // Detects the specific failure of require('node:sqlite') on Node <22.13
 // (ERR_UNKNOWN_BUILTIN_MODULE) so writeLocalHistory can log a clear, actionable message
-// instead of the raw exception (see plans/002-...) — the install-time engines.node check
-// only warns, it doesn't preclude running on an older Node.
+// instead of the raw exception.
 function isMissingSqliteModule(err) {
   return err?.code === 'ERR_UNKNOWN_BUILTIN_MODULE'
     && String(err?.message ?? '').includes('node:sqlite');

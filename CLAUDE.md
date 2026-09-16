@@ -196,7 +196,7 @@ Conventions:
   `require('node:sqlite')` throws on Node <22.13, and `writeLocalHistory`'s catch block logs `"Node 22.13+ needed for local history..."` instead of the raw exception for that one
   case — still silent/never-throwing/never-blocking otherwise (see ADR-019).
 - **`REPORT_COLUMNS`/`BRANCH_REPORT_COLUMNS` (`report.js`) are the single source of truth for their table's header AND row cells — never hand-write a header string and
-  row-interpolation separately again (see `plans/003-...`).** A prior bug had them drift out of sync (extra header columns, wrong cell order) undetected by tests for a long time.
+  row-interpolation separately again.**
   Any new/removed column is a one-line change to the relevant array; a PR that edits a header string and a row-building line separately should be rejected.
 
 ## Install / Uninstall

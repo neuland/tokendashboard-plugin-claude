@@ -106,7 +106,7 @@ function formatCents(cents) {
 }
 
 // Single source of truth for both the header row and each data row — header and cells
-// can no longer drift out of sync (see plans/003-...).
+// can no longer drift out of sync.
 const REPORT_COLUMNS = [
   { header: 'project', value: row => row.project },
   { header: 'branch', value: row => row.branch },
