@@ -180,7 +180,7 @@ test('formatBranchReportMarkdown renders one table, the date range, and the bran
     // then
     assert.ok(md.startsWith('# Branches Token Usage Report'));
     assert.ok(md.includes('Range: 2026-08-11 – 2026-09-11'));
-    assert.ok(md.includes('| project | branch | entries |'));
+    assert.ok(md.includes('| project | branch | type | entries |'));
     assert.ok(md.includes('backend'));
     assert.ok(md.includes('send-data'));
   });

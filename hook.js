@@ -28,7 +28,7 @@ const INGEST_PATH = 'api/usage/ingest/claude';
 const PRICES_ROUTE = 'api/prices/claude';
 const PRICES_CACHE_PATH = path.join(PLUGIN_DIR, 'prices.json');
 const LOCAL_HISTORY_DB_PATH = path.join(PLUGIN_DIR, 'local.sqlite');
-const LOCAL_HISTORY_SCHEMA_VERSION = 2;
+const LOCAL_HISTORY_SCHEMA_VERSION = 3;
 const PRICE_SCHEMA_VERSION = 1;
 const PRICE_UPDATE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 // Cap how many entries go into a single POST so a long offline period can't build
@@ -187,9 +187,15 @@ function ensureLocalHistorySchema(db) {
       ephemeral_1h_tokens  INTEGER NOT NULL DEFAULT 0,
       price_cents          REAL NOT NULL DEFAULT 0,
       project              TEXT,
-      branch               TEXT
+      branch               TEXT,
+      type                 TEXT
     )
   `);
+  // v<3 -> v3: a DB created before `type` existed has the table but not the column —
+  // CREATE TABLE IF NOT EXISTS above is a no-op for it, so add the column explicitly.
+  if (version > 0 && version < 3) {
+    db.exec('ALTER TABLE usage_entries ADD COLUMN type TEXT');
+  }
   db.exec('CREATE INDEX IF NOT EXISTS idx_usage_entries_timestamp ON usage_entries(timestamp)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_usage_entries_session_id ON usage_entries(session_id)');
   db.exec(`PRAGMA user_version = ${LOCAL_HISTORY_SCHEMA_VERSION}`);
@@ -234,8 +240,8 @@ function writeLocalHistory(entry) {
       INSERT INTO usage_entries (
         entry_id, session_id, timestamp, model,
         input_tokens, output_tokens, cache_write_tokens, cache_read_tokens,
-        ephemeral_5m_tokens, ephemeral_1h_tokens, price_cents, project, branch
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ephemeral_5m_tokens, ephemeral_1h_tokens, price_cents, project, branch, type
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(entry_id) DO UPDATE SET
         session_id = excluded.session_id,
         timestamp = excluded.timestamp,
@@ -248,7 +254,8 @@ function writeLocalHistory(entry) {
         ephemeral_1h_tokens = excluded.ephemeral_1h_tokens,
         price_cents = excluded.price_cents,
         project = excluded.project,
-        branch = excluded.branch
+        branch = excluded.branch,
+        type = excluded.type
     `).run(
       entry.entry_id,
       entry.session_id,
@@ -263,6 +270,7 @@ function writeLocalHistory(entry) {
       entry.price_cents ?? 0,
       entry.project ?? null,
       entry.branch ?? null,
+      entry.type ?? null,
     );
   } catch (err) {
     if (isMissingSqliteModule(err)) {
@@ -345,6 +353,9 @@ function aggregateUsage(lines, startIdx = 0, finalizedUsage = null) {
         },
         timestamp: null,
         ids: [],
+        // Set only for advisor accumulators (see below) — null means "caller decides"
+        // (writeAggregatedEntries falls back to the turn/subagent-level type).
+        type: null,
       };
       byModel.set(model, acc);
     }
@@ -372,11 +383,42 @@ function aggregateUsage(lines, startIdx = 0, finalizedUsage = null) {
     // keeps entryId stable — a different model namespaces the id set.
     for (const it of entry.message.usage.iterations ?? []) {
       if (it.type === 'advisor_message' && it.model) {
-        addUsage(accFor(it.model), it, entry.timestamp, id);
+        const advisorAcc = accFor(it.model);
+        addUsage(advisorAcc, it, entry.timestamp, id);
+        advisorAcc.type = ADVISOR_TYPE;
       }
     }
   }
   return byModel;
+}
+
+// `type` classifies who was at work for a captured row — a main-turn skill invocation, a
+// plain main-turn, a subagent's own kind, or the advisor. Local-history-only, like
+// project/branch: never sent to the queue/backend.
+//
+// - Main-turn rows: a user-typed slash command that invoked a Skill wraps the turn-origin
+//   entry's `message.content` (a plain string) in `<command-name>/xxx</command-name>`
+//   (observed behavior, not documented by Claude Code). Only present when the user typed
+//   the command themselves — a Skill the agent invokes mid-turn via its own tool call does
+//   NOT produce this wrapper, so the two stay distinguishable. Falls back to MAIN_AGENT_TYPE.
+// - Subagent rows: `hookData.agent_type` from the SubagentStop hook payload (the
+//   subagent's `name`, e.g. "Explore", "code-reviewer", a custom name) — falls back to
+//   SUBAGENT_TYPE only if that field is missing/empty (should not normally happen).
+// - Advisor rows: the advisor runs inline in one main-turn API call, never through
+//   SubagentStop, so it gets no `agent_type` — tagged ADVISOR_TYPE directly in
+//   aggregateUsage instead (see below), since it's identifiable there by
+//   `iterations[].type === 'advisor_message'`.
+const MAIN_AGENT_TYPE = 'main-agent';
+const SUBAGENT_TYPE = 'subagent';
+const ADVISOR_TYPE = 'advisor';
+const COMMAND_NAME_RE = /<command-name>\/([^<\n]+)<\/command-name>/;
+
+function detectSkillType(originEntry) {
+  const content = originEntry?.message?.content;
+  if (typeof content !== 'string') {
+    return null;
+  }
+  return content.match(COMMAND_NAME_RE)?.[1] ?? null;
 }
 
 // Deterministic idempotency key: the same turn re-captured produces the identical key,
@@ -447,13 +489,16 @@ function detectBranch(cwd) {
 // `localHistory` gates the additional local.sqlite write — false by default so each capture
 // path opts in individually as it's wired.
 // `cwd` (the hook payload's own `cwd`, i.e. the session's working directory) is only ever
-// used for local.sqlite-only columns — never sent to the queue/backend.
-function writeAggregatedEntries(sessionId, lines, startIdx = 0, { cwd = null } = {}) {
+// used for local.sqlite-only columns — never sent to the queue/backend. `type` is the
+// caller-determined default (MAIN_AGENT_TYPE, a skill name, or a subagent's agent_type) —
+// overridden per-model by aggregateUsage's own ADVISOR_TYPE tag, since one aggregation
+// window can hold both a main-turn model and an advisor model.
+function writeAggregatedEntries(sessionId, lines, startIdx = 0, { cwd = null, type = null } = {}) {
   // Read once per call, not once per model — effectivePriceTable() re-reads prices.json.
   const priceTable = effectivePriceTable();
   const project = detectProject(cwd);
   const branch = detectBranch(cwd);
-  for (const [model, { usage, timestamp, ids }] of aggregateUsage(lines, startIdx)) {
+  for (const [model, { usage, timestamp, ids, type: advisorType }] of aggregateUsage(lines, startIdx)) {
     const entry = {
       entry_id: entryId(sessionId, model, ids),
       timestamp: timestamp ?? new Date().toISOString(),
@@ -467,6 +512,7 @@ function writeAggregatedEntries(sessionId, lines, startIdx = 0, { cwd = null } =
       price_cents: priceCentsForModel(model, usage, priceTable),
       project,
       branch,
+      type: advisorType ?? type,
     });
   }
 }
@@ -606,7 +652,16 @@ async function capture(hookData) {
     }
   }
 
-  writeAggregatedEntries(sessionId, lines, turnOriginIdx, { cwd });
+  let originEntry = null;
+  try {
+    originEntry = JSON.parse(lines[turnOriginIdx]);
+  } catch {
+    // leave null — detectSkillType(null) returns null, falling back to MAIN_AGENT_TYPE below
+  }
+  writeAggregatedEntries(sessionId, lines, turnOriginIdx, {
+    cwd,
+    type: detectSkillType(originEntry) ?? MAIN_AGENT_TYPE,
+  });
 }
 
 // --- Catch-up (SessionEnd re-aggregation) ---
@@ -655,7 +710,16 @@ async function catchUpCapture(hookData) {
   for (let t = 0; t < origins.length; t++) {
     const start = origins[t];
     const end = t + 1 < origins.length ? origins[t + 1] : lines.length;
-    writeAggregatedEntries(sessionId, lines.slice(start, end), 0, { cwd });
+    let originEntry = null;
+    try {
+      originEntry = JSON.parse(lines[start]);
+    } catch {
+      // leave null — detectSkillType(null) returns null, falling back to MAIN_AGENT_TYPE below
+    }
+    writeAggregatedEntries(sessionId, lines.slice(start, end), 0, {
+      cwd,
+      type: detectSkillType(originEntry) ?? MAIN_AGENT_TYPE,
+    });
   }
 }
 
@@ -667,7 +731,12 @@ async function catchUpCapture(hookData) {
 // stale snapshot. Also fires spuriously for internal agents with no transcript file;
 // the existence guard below drops those (see ADR-013).
 async function captureSubagent(hookData) {
-  const { agent_transcript_path: transcriptPath, session_id: sessionId, cwd = process.cwd() } = hookData;
+  const {
+    agent_transcript_path: transcriptPath,
+    session_id: sessionId,
+    cwd = process.cwd(),
+    agent_type: agentType,
+  } = hookData;
   if (!transcriptPath || !sessionId || !fs.existsSync(transcriptPath)) {
     return;
   }
@@ -677,7 +746,7 @@ async function captureSubagent(hookData) {
     return;
   }
 
-  writeAggregatedEntries(sessionId, lines, 0, { cwd });
+  writeAggregatedEntries(sessionId, lines, 0, { cwd, type: agentType || SUBAGENT_TYPE });
 }
 
 // Poll until the chronologically last countable assistant entry reaches a TERMINAL
@@ -1202,4 +1271,8 @@ module.exports = {
   INGEST_PATH,
   PRICES_ROUTE,
   HOOK_DEST,
+  MAIN_AGENT_TYPE,
+  SUBAGENT_TYPE,
+  ADVISOR_TYPE,
+  detectSkillType,
 };

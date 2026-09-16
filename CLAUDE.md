@@ -185,6 +185,15 @@ Conventions:
   worktree (active folder name, not a remote URL or full path, and not overridable — no tag file or other manual override) — Claude Code is not required to run inside any named/git
   folder, so this must and does work for a plain scratch directory too. `detectBranch(cwd)` = a synchronous `git rev-parse --abbrev-ref HEAD` run in the *base* worktree; any
   failure (no `git`, not a repo — again, not a requirement) → `null`, never throws.
+- **`type` is likewise a local.sqlite-only column, never sent to the queue/backend — it classifies WHO was at work on a captured row, not what kind of work it did.** Three
+  sources, all resolved at the immediate post-`Stop`/`SubagentStop` capture point (no extra transcript re-read): (1) a user-typed slash command that invoked a Skill wraps the
+  turn-origin entry's `message.content` (a plain string) in `<command-name>/xxx</command-name>` — observed behavior, not documented by Claude Code (`detectSkillType`); a Skill the
+  agent invokes mid-turn via its own tool call does NOT produce this wrapper, so the two stay distinguishable. A main-turn row that isn't a slash-command skill invocation defaults
+  to `MAIN_AGENT_TYPE`. (2) A subagent capture's own `hookData.agent_type` (the `SubagentStop` hook's granular subagent name, e.g. `"Explore"`, a custom agent name; 
+  falls back to `SUBAGENT_TYPE` only if that field is missing/empty. (3) The advisor (`/advisor`) runs inline in one main-turn API call,
+  never through `SubagentStop`, so it gets no `agent_type` — `aggregateUsage` tags its accumulator `ADVISOR_TYPE` directly (identifiable there via
+  `iterations[].type === 'advisor_message'`), overriding whatever type the surrounding main turn resolved to. There is no field anywhere (hook payload, transcript, or
+  Task/Agent-tool schema) recording whether the user explicitly requested a given subagent vs. the model choosing one itself — do not invent a proxy for that; it does not exist.
 
 - **Node version requirement is a warning, not a hard install gate (see ADR-019).** `package.json`'s `engines.node` is `">=22.13"` (`node:sqlite`, used by `hook.js`'s
   `writeLocalHistory`/`openLocalHistoryDb` and `report.js`'s `openReadOnly`, needs it). `updater.js`'s `install` command checks the running Node (`satisfiesMinNodeVersion`, a

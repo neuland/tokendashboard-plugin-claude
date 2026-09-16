@@ -232,7 +232,7 @@ test('formatReportMarkdown renders a heading + table per period bucket, labeled 
     // then
     assert.ok(text.startsWith('# Weekly Token Usage Report'));
     assert.ok(text.includes('## 2026-W36'));
-    assert.ok(text.includes('| project | branch | entries |'));
+    assert.ok(text.includes('| project | branch | type | entries |'));
     assert.ok(text.includes(report.formatCents(5.5)));
 
     // and — the data row must have exactly as many cells as the header row (regression
@@ -249,8 +249,8 @@ test('formatReportMarkdown renders a heading + table per period bucket, labeled 
     // cache_write (4) must land before cache_read (3 + ephemeral 2 + 1 = 6), matching the
     // header's cache_write | cache_read order (cache_read is the harder-to-read big number,
     // pushed last)
-    assert.equal(dataCols[5].trim(), '4');
-    assert.equal(dataCols[6].trim(), '6');
+    assert.equal(dataCols[6].trim(), '4');
+    assert.equal(dataCols[7].trim(), '6');
   });
 });
 
@@ -259,7 +259,7 @@ test('REPORT_COLUMNS defines the exact period-report column set and order', () =
     // given / when / then — pins the column contract so a future edit that changes it is
     // a deliberate, visible test change, not a silent header/row drift
     assert.deepEqual(report.REPORT_COLUMNS.map(c => c.header), [
-      'project', 'branch', 'entries',
+      'project', 'branch', 'type', 'entries',
       'in', 'out', 'cache_write', 'cache_read', 'price',
     ]);
   });

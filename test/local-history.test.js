@@ -40,7 +40,7 @@ test('openLocalHistoryDb creates local.sqlite with the usage_entries schema and 
       assert.deepEqual(columns.sort(), [
         'branch', 'cache_read_tokens', 'cache_write_tokens', 'entry_id',
         'ephemeral_1h_tokens', 'ephemeral_5m_tokens', 'input_tokens',
-        'model', 'output_tokens', 'price_cents', 'project', 'session_id', 'timestamp',
+        'model', 'output_tokens', 'price_cents', 'project', 'session_id', 'timestamp', 'type',
       ].sort());
     } finally {
       db.close();

@@ -37,6 +37,7 @@ const PERIOD_REPORT_QUERY = `
     strftime(?, timestamp) AS period,
     COALESCE(project, '(none)') AS project,
     COALESCE(branch, '(none)') AS branch,
+    COALESCE(type, '(none)') AS type,
     COUNT(*) AS entries,
     SUM(input_tokens) AS input_tokens,
     SUM(output_tokens) AS output_tokens,
@@ -44,8 +45,8 @@ const PERIOD_REPORT_QUERY = `
     SUM(cache_read_tokens + ephemeral_5m_tokens + ephemeral_1h_tokens) AS cache_read_tokens,
     SUM(price_cents) AS price_cents
   FROM usage_entries
-  GROUP BY period, project, branch
-  ORDER BY period, project, branch
+  GROUP BY period, project, branch, type
+  ORDER BY period, project, branch, type
 `;
 
 // One entry per supported CLI flag — the only thing that differs between report periods
@@ -65,12 +66,13 @@ function periodReport(db, strftimeFmt) {
 
 // --- `--branches` mode: lifetime totals grouped by project/branch, NOT bucketed by
 // calendar period — answers "what did this branch cost", not "what happened in week Y"
-const BRANCH_REPORT_GROUP_COLS = ['project', 'branch'];
+const BRANCH_REPORT_GROUP_COLS = ['project', 'branch', 'type'];
 
 const BRANCH_REPORT_QUERY = `
   SELECT
     COALESCE(project, '(none)') AS project,
     COALESCE(branch, '(none)') AS branch,
+    COALESCE(type, '(none)') AS type,
     COUNT(*) AS entries,
     SUM(input_tokens) AS input_tokens,
     SUM(output_tokens) AS output_tokens,
@@ -79,7 +81,7 @@ const BRANCH_REPORT_QUERY = `
     SUM(price_cents) AS price_cents
   FROM usage_entries
   WHERE timestamp >= ? AND timestamp <= ?
-  GROUP BY project, branch
+  GROUP BY project, branch, type
   ORDER BY branch IS NULL, entries DESC
 `;
 
@@ -110,6 +112,7 @@ function formatCents(cents) {
 const REPORT_COLUMNS = [
   { header: 'project', value: row => row.project },
   { header: 'branch', value: row => row.branch },
+  { header: 'type', value: row => row.type },
   { header: 'entries', value: row => row.entries },
   { header: 'in', value: row => row.input_tokens },
   { header: 'out', value: row => row.output_tokens },
@@ -143,6 +146,7 @@ function formatReportMarkdown(rows, label) {
 const BRANCH_REPORT_COLUMNS = [
   { header: 'project', value: row => row.project },
   { header: 'branch', value: row => row.branch },
+  { header: 'type', value: row => row.type },
   { header: 'entries', value: row => row.entries },
   { header: 'in', value: row => row.input_tokens },
   { header: 'out', value: row => row.output_tokens },
