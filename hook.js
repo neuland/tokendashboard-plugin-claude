@@ -28,7 +28,6 @@ const INGEST_PATH = 'api/usage/ingest/claude';
 const PRICES_ROUTE = 'api/prices/claude';
 const PRICES_CACHE_PATH = path.join(PLUGIN_DIR, 'prices.json');
 const LOCAL_HISTORY_DB_PATH = path.join(PLUGIN_DIR, 'local.sqlite');
-const LOCAL_HISTORY_SCHEMA_VERSION = 3;
 const PRICE_SCHEMA_VERSION = 1;
 const PRICE_UPDATE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 // Cap how many entries go into a single POST so a long offline period can't build
@@ -168,11 +167,9 @@ function releaseLock() {
 // Local, queryable per-turn history — separate from the queue (which is transient,
 // deleted once sent) and network-independent.
 
+// No schema versioning yet (no migrations) — too early, few installs. Add
+// PRAGMA user_version + migrations once the schema needs to change under existing data.
 function ensureLocalHistorySchema(db) {
-  const { user_version: version } = db.prepare('PRAGMA user_version').get();
-  if (version >= LOCAL_HISTORY_SCHEMA_VERSION) {
-    return;
-  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS usage_entries (
       entry_id            TEXT PRIMARY KEY,
@@ -187,18 +184,13 @@ function ensureLocalHistorySchema(db) {
       ephemeral_1h_tokens  INTEGER NOT NULL DEFAULT 0,
       price_cents          REAL NOT NULL DEFAULT 0,
       project              TEXT,
+      git_project          TEXT,
       branch               TEXT,
       type                 TEXT
     )
   `);
-  // v<3 -> v3: a DB created before `type` existed has the table but not the column —
-  // CREATE TABLE IF NOT EXISTS above is a no-op for it, so add the column explicitly.
-  if (version > 0 && version < 3) {
-    db.exec('ALTER TABLE usage_entries ADD COLUMN type TEXT');
-  }
   db.exec('CREATE INDEX IF NOT EXISTS idx_usage_entries_timestamp ON usage_entries(timestamp)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_usage_entries_session_id ON usage_entries(session_id)');
-  db.exec(`PRAGMA user_version = ${LOCAL_HISTORY_SCHEMA_VERSION}`);
 }
 
 // Opens (creating + migrating if needed) the local history DB. WAL + busy_timeout for
@@ -240,8 +232,8 @@ function writeLocalHistory(entry) {
       INSERT INTO usage_entries (
         entry_id, session_id, timestamp, model,
         input_tokens, output_tokens, cache_write_tokens, cache_read_tokens,
-        ephemeral_5m_tokens, ephemeral_1h_tokens, price_cents, project, branch, type
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ephemeral_5m_tokens, ephemeral_1h_tokens, price_cents, project, git_project, branch, type
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(entry_id) DO UPDATE SET
         session_id = excluded.session_id,
         timestamp = excluded.timestamp,
@@ -254,6 +246,7 @@ function writeLocalHistory(entry) {
         ephemeral_1h_tokens = excluded.ephemeral_1h_tokens,
         price_cents = excluded.price_cents,
         project = excluded.project,
+        git_project = excluded.git_project,
         branch = excluded.branch,
         type = excluded.type
     `).run(
@@ -269,6 +262,7 @@ function writeLocalHistory(entry) {
       usage.ephemeral_1h_input_tokens ?? 0,
       entry.price_cents ?? 0,
       entry.project ?? null,
+      entry.git_project ?? null,
       entry.branch ?? null,
       entry.type ?? null,
     );
@@ -484,6 +478,35 @@ function detectBranch(cwd) {
   }
 }
 
+// Walks up from `cwd` looking for a `.git` entry (dir or file — a linked worktree/
+// submodule has a `.git` file, not a dir) at each level, stopping at (and including)
+// the user's home directory or the filesystem root, whichever comes first — never walks
+// above home. Returns the basename of the first dir that has one, or null if none does.
+// Distinct from detectProject/resolveBaseWorktree: this is the immediate repo cwd sits
+// in (e.g. `backend`), not the base worktree of an isolation worktree — it exists to
+// disambiguate two same-named repos (e.g. two independent `backend` checkouts) that
+// resolveBaseWorktree can't tell apart. Local.sqlite-only, like project/branch.
+function detectGitProject(cwd) {
+  if (!cwd) {
+    return null;
+  }
+  const home = os.homedir();
+  let dir = path.resolve(cwd);
+  for (;;) {
+    if (fs.existsSync(path.join(dir, '.git'))) {
+      return path.basename(dir);
+    }
+    if (dir === home) {
+      return null;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      return null;
+    }
+    dir = parent;
+  }
+}
+
 // Aggregate `lines` from `startIdx` and write one queue entry per model. Shared by the
 // Stop and SubagentStop paths so entry shape and idempotency-key derivation stay identical.
 // `localHistory` gates the additional local.sqlite write — false by default so each capture
@@ -497,6 +520,7 @@ function writeAggregatedEntries(sessionId, lines, startIdx = 0, { cwd = null, ty
   // Read once per call, not once per model — effectivePriceTable() re-reads prices.json.
   const priceTable = effectivePriceTable();
   const project = detectProject(cwd);
+  const gitProject = detectGitProject(cwd);
   const branch = detectBranch(cwd);
   for (const [model, { usage, timestamp, ids, type: advisorType }] of aggregateUsage(lines, startIdx)) {
     const entry = {
@@ -511,6 +535,7 @@ function writeAggregatedEntries(sessionId, lines, startIdx = 0, { cwd = null, ty
       ...entry,
       price_cents: priceCentsForModel(model, usage, priceTable),
       project,
+      git_project: gitProject,
       branch,
       type: advisorType ?? type,
     });
@@ -1237,11 +1262,11 @@ module.exports = {
   writeLocalHistory,
   isMissingSqliteModule,
   detectProject,
+  detectGitProject,
   detectBranch,
   resolveBaseWorktree,
   writeAggregatedEntries,
   LOCAL_HISTORY_DB_PATH,
-  LOCAL_HISTORY_SCHEMA_VERSION,
   FLUSH_BATCH_SIZE,
   acquireLock,
   releaseLock,

@@ -24,7 +24,7 @@ const sampleEntry = (overrides = {}) => ({
   ...overrides,
 });
 
-test('openLocalHistoryDb creates local.sqlite with the usage_entries schema and stamps user_version', () => {
+test('openLocalHistoryDb creates local.sqlite with the usage_entries schema', () => {
   inSandbox((hook, home) => {
     // given — no local.sqlite yet
 
@@ -34,12 +34,10 @@ test('openLocalHistoryDb creates local.sqlite with the usage_entries schema and 
       // then
       assert.equal(hook.LOCAL_HISTORY_DB_PATH, path.join(pluginDir(home), 'local.sqlite'));
       assert.ok(fs.existsSync(hook.LOCAL_HISTORY_DB_PATH));
-      const { user_version: version } = db.prepare('PRAGMA user_version').get();
-      assert.equal(version, hook.LOCAL_HISTORY_SCHEMA_VERSION);
       const columns = db.prepare('PRAGMA table_info(usage_entries)').all().map(c => c.name);
       assert.deepEqual(columns.sort(), [
         'branch', 'cache_read_tokens', 'cache_write_tokens', 'entry_id',
-        'ephemeral_1h_tokens', 'ephemeral_5m_tokens', 'input_tokens',
+        'ephemeral_1h_tokens', 'ephemeral_5m_tokens', 'git_project', 'input_tokens',
         'model', 'output_tokens', 'price_cents', 'project', 'session_id', 'timestamp', 'type',
       ].sort());
     } finally {
