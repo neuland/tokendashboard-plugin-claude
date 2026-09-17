@@ -2,7 +2,7 @@
 
 ## Decision
 
-At `SessionEnd`, before flushing, `catchUpCapture` re-aggregates the transcript's trailing turns (bounded to `CATCH_UP_MAX_TURNS` = 10) and (re-)writes a queue entry for each,
+At `SessionEnd`, before flushing, `catchUpCapture` re-aggregates the transcript's trailing turns (bounded to `CATCH_UP_MAX_TURNS` = 20) and (re-)writes a queue entry for each,
 relying on the existing `entryId(sessionId, model, ids)` dedup hash to make re-emitted, already-captured turns safe no-ops server-side — no new local "what have I captured" state
 is introduced.
 
