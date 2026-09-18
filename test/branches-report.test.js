@@ -23,68 +23,63 @@ const sampleEntry = (overrides = {}) => ({
   ...overrides,
 });
 
-test('branchReport groups by project and branch', () => {
-  inReportSandbox((report, hook) => {
-    // given
-    hook.writeLocalHistory(sampleEntry({
-      entry_id: 'e1', project: 'backend', branch: 'send-data',
-    }));
-    hook.writeLocalHistory(sampleEntry({
-      entry_id: 'e2', project: 'backend', branch: 'send-data',
-    }));
-    hook.writeLocalHistory(sampleEntry({
-      entry_id: 'e3', project: 'frontend', branch: 'send-data',
-    }));
-    hook.writeLocalHistory(sampleEntry({
-      entry_id: 'e4', project: 'backend', branch: 'receive-answer',
-    }));
+const FULL_RANGE = ['2026-01-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z'];
 
-    // when
-    const db = report.openReadOnly();
-    let rows;
-    try {
-      rows = report.branchReport(db, '2026-01-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z');
-    } finally {
-      db.close();
-    }
-
-    assert.equal(rows.length, 3); // different branch and project -> separate rows
-    const byProjectBranch = Object.fromEntries(rows.map(r => [`${r.project}/${r.branch}`, r.entries]));
-    assert.deepEqual(byProjectBranch, {
-      'backend/send-data': 2,
-      'frontend/send-data': 1,
-      'backend/receive-answer': 1,
+test('LIFETIME_REPORTS defines the --git_project and --project modes, each with its own identity column and label', () => {
+  inReportSandbox(report => {
+    // given / when / then — pins the contract so a future edit is a deliberate, visible
+    // test change, not a silent drift
+    assert.deepEqual(report.LIFETIME_REPORTS, {
+      '--git_project': { identityCol: 'git_project', label: 'Git Project' },
+      '--project': { identityCol: 'project', label: 'Project' },
     });
   });
 });
 
-test('branchReport only counts entries inside [from, to]', () => {
+test('branchSectionsFor builds the three fixed sections for a given identity column, in order', () => {
+  inReportSandbox(report => {
+    // given / when / then
+    assert.deepEqual(report.branchSectionsFor('git_project'), [
+      { title: 'By git_project', groupCols: ['git_project'] },
+      { title: 'By Branch', groupCols: ['git_project', 'branch'] },
+      { title: 'By Model & Type', groupCols: ['git_project', 'model', 'type'] },
+    ]);
+    assert.deepEqual(report.branchSectionsFor('project'), [
+      { title: 'By project', groupCols: ['project'] },
+      { title: 'By Branch', groupCols: ['project', 'branch'] },
+      { title: 'By Model & Type', groupCols: ['project', 'model', 'type'] },
+    ]);
+  });
+});
+
+test('groupedReport groups by git_project alone, disambiguating same-named projects', () => {
   inReportSandbox((report, hook) => {
-    // given
-    hook.writeLocalHistory(sampleEntry({ entry_id: 'in-range', timestamp: '2026-06-15T00:00:00.000Z' }));
-    hook.writeLocalHistory(sampleEntry({ entry_id: 'too-early', timestamp: '2026-01-01T00:00:00.000Z' }));
-    hook.writeLocalHistory(sampleEntry({ entry_id: 'too-late', timestamp: '2026-12-31T00:00:00.000Z' }));
+    // given — two independent checkouts both named "backend"
+    hook.writeLocalHistory(sampleEntry({ entry_id: 'e1', project: 'backend', git_project: 'client-a-backend' }));
+    hook.writeLocalHistory(sampleEntry({ entry_id: 'e2', project: 'backend', git_project: 'client-a-backend' }));
+    hook.writeLocalHistory(sampleEntry({ entry_id: 'e3', project: 'backend', git_project: 'client-b-backend' }));
 
     // when
     const db = report.openReadOnly();
     let rows;
     try {
-      rows = report.branchReport(db, '2026-06-01T00:00:00.000Z', '2026-06-30T23:59:59.999Z');
+      rows = report.groupedReport(db, ['git_project'], ...FULL_RANGE);
     } finally {
       db.close();
     }
 
     // then
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0].entries, 1);
+    assert.equal(rows.length, 2);
+    const byGitProject = Object.fromEntries(rows.map(r => [r.git_project, r.entries]));
+    assert.deepEqual(byGitProject, { 'client-a-backend': 2, 'client-b-backend': 1 });
   });
 });
 
-test('branchReport sorts NULL-branch rows last, regardless of entry count', () => {
+test('groupedReport groups by an identity column + branch, and sorts NULL-branch rows last regardless of entry count', () => {
   inReportSandbox((report, hook) => {
     // given — an untagged bucket with MORE entries than the tagged one
     for (let i = 0; i < 5; i++) {
-      hook.writeLocalHistory(sampleEntry({ entry_id: `untagged-${i}` })); // no project/branch
+      hook.writeLocalHistory(sampleEntry({ entry_id: `untagged-${i}` })); // no branch/project
     }
     hook.writeLocalHistory(sampleEntry({
       entry_id: 'tagged', project: 'backend', branch: 'send-data',
@@ -94,7 +89,7 @@ test('branchReport sorts NULL-branch rows last, regardless of entry count', () =
     const db = report.openReadOnly();
     let rows;
     try {
-      rows = report.branchReport(db, '2026-01-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z');
+      rows = report.groupedReport(db, ['project', 'branch'], ...FULL_RANGE);
     } finally {
       db.close();
     }
@@ -108,25 +103,59 @@ test('branchReport sorts NULL-branch rows last, regardless of entry count', () =
   });
 });
 
-test('branchReport sorts non-null-branch rows by entries descending', () => {
+test('groupedReport groups by identityCol+model+type for usage analysis', () => {
   inReportSandbox((report, hook) => {
-    // given
-    hook.writeLocalHistory(sampleEntry({ entry_id: 'e1', branch: 'small' }));
-    for (let i = 0; i < 3; i++) {
-      hook.writeLocalHistory(sampleEntry({ entry_id: `e-big-${i}`, branch: 'big' }));
-    }
+    // given — same project, two different models, one of them used by a subagent
+    hook.writeLocalHistory(sampleEntry({
+      entry_id: 'e1', project: 'backend', model: 'claude-opus-4-8', type: 'main-agent',
+    }));
+    hook.writeLocalHistory(sampleEntry({
+      entry_id: 'e2', project: 'backend', model: 'claude-opus-4-8', type: 'main-agent',
+    }));
+    hook.writeLocalHistory(sampleEntry({
+      entry_id: 'e3', project: 'backend', model: 'claude-haiku-4-5', type: 'subagent',
+    }));
 
     // when
     const db = report.openReadOnly();
     let rows;
     try {
-      rows = report.branchReport(db, '2026-01-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z');
+      rows = report.groupedReport(db, ['project', 'model', 'type'], ...FULL_RANGE);
+    } finally {
+      db.close();
+    }
+
+    // then — 2 distinct (model, type) groups within the one project
+    assert.equal(rows.length, 2);
+    const byModel = Object.fromEntries(rows.map(r => [`${r.model}/${r.type}`, r.entries]));
+    assert.deepEqual(byModel, {
+      'claude-opus-4-8/main-agent': 2,
+      'claude-haiku-4-5/subagent': 1,
+    });
+  });
+});
+
+test('groupedReport only counts entries inside [from, to]', () => {
+  inReportSandbox((report, hook) => {
+    // given
+    hook.writeLocalHistory(sampleEntry({ entry_id: 'in-range', timestamp: '2026-06-15T00:00:00.000Z' }));
+    hook.writeLocalHistory(sampleEntry({ entry_id: 'too-early', timestamp: '2026-01-01T00:00:00.000Z' }));
+    hook.writeLocalHistory(sampleEntry({ entry_id: 'too-late', timestamp: '2026-12-31T00:00:00.000Z' }));
+
+    // when
+    const db = report.openReadOnly();
+    let rows;
+    try {
+      rows = report.groupedReport(
+        db, ['git_project'], '2026-06-01T00:00:00.000Z', '2026-06-30T23:59:59.999Z',
+      );
     } finally {
       db.close();
     }
 
     // then
-    assert.deepEqual(rows.map(r => r.branch), ['big', 'small']);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].entries, 1);
   });
 });
 
@@ -147,46 +176,56 @@ test('defaultReportRange spans the trailing month up to "now"', () => {
 test('parseDateFlag: absent, valid, and invalid --from/--to', () => {
   inReportSandbox(report => {
     // given / when / then
-    assert.deepEqual(report.parseDateFlag(['--branches'], '--from'), { present: false });
-    assert.deepEqual(report.parseDateFlag(['--branches', '--from', '2026-08-01'], '--from'), { present: true, value: '2026-08-01' });
-    assert.deepEqual(report.parseDateFlag(['--branches', '--from', 'not-a-date'], '--from'), { present: true, error: true });
-    assert.deepEqual(report.parseDateFlag(['--branches', '--from'], '--from'), { present: true, error: true }); // missing value
+    assert.deepEqual(report.parseDateFlag(['--git_project'], '--from'), { present: false });
+    assert.deepEqual(report.parseDateFlag(['--git_project', '--from', '2026-08-01'], '--from'), { present: true, value: '2026-08-01' });
+    assert.deepEqual(report.parseDateFlag(['--git_project', '--from', 'not-a-date'], '--from'), { present: true, error: true });
+    assert.deepEqual(report.parseDateFlag(['--git_project', '--from'], '--from'), { present: true, error: true }); // missing value
   });
 });
 
-test('formatBranchReportMarkdown returns null when there is no data', () => {
+test('formatBranchReportMarkdown returns null when every section has no data', () => {
   inReportSandbox(report => {
     // given / when / then
-    assert.equal(report.formatBranchReportMarkdown([], '2026-08-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z'), null);
+    const reportsData = report.branchSectionsFor('git_project').map(r => ({ ...r, rows: [] }));
+    assert.equal(
+      report.formatBranchReportMarkdown(reportsData, '2026-08-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z', 'Git Project'),
+      null,
+    );
   });
 });
 
-test('formatBranchReportMarkdown renders one table, the date range, and the branch rows', () => {
+test('formatBranchReportMarkdown renders the identity-column label in the top heading, and one heading + table per section', () => {
   inReportSandbox((report, hook) => {
     // given
-    hook.writeLocalHistory(sampleEntry({ project: 'backend', branch: 'send-data' }));
+    hook.writeLocalHistory(sampleEntry({ project: 'backend', git_project: 'backend', branch: 'send-data' }));
 
     const db = report.openReadOnly();
-    let rows;
+    let reportsData;
     try {
-      rows = report.branchReport(db, '2026-01-01T00:00:00.000Z', '2026-12-31T23:59:59.999Z');
+      reportsData = report.branchSectionsFor('git_project').map(({ title, groupCols }) => ({
+        title, groupCols, rows: report.groupedReport(db, groupCols, ...FULL_RANGE),
+      }));
     } finally {
       db.close();
     }
 
     // when
-    const md = report.formatBranchReportMarkdown(rows, '2026-08-11T00:00:00.000Z', '2026-09-11T00:00:00.000Z');
+    const md = report.formatBranchReportMarkdown(reportsData, '2026-08-11T00:00:00.000Z', '2026-09-11T00:00:00.000Z', 'Git Project');
 
     // then
-    assert.ok(md.startsWith('# Branches Token Usage Report'));
+    assert.ok(md.startsWith('# Git Project Token Usage Report'));
     assert.ok(md.includes('Range: 2026-08-11 – 2026-09-11'));
-    assert.ok(md.includes('| project | branch | type | entries |'));
+    const headings = [...md.matchAll(/^## (.+)$/gm)].map(m => m[1]);
+    assert.deepEqual(headings, ['By git_project', 'By Branch', 'By Model & Type']);
+    assert.ok(md.includes('| git_project | entries |'));
+    assert.ok(md.includes('| git_project | branch | entries |'));
+    assert.ok(md.includes('| git_project | model | type | entries |'));
     assert.ok(md.includes('backend'));
     assert.ok(md.includes('send-data'));
   });
 });
 
-test('main() --branches with no data in the default (trailing-month) range writes no file', () => {
+test('main() --git_project with no data in the default (trailing-month) range writes no file', () => {
   inReportSandbox((report, hook) => {
     // given — an entry far outside the default trailing-month window
     hook.writeLocalHistory(sampleEntry({ timestamp: '2020-01-01T00:00:00.000Z' }));
@@ -196,7 +235,7 @@ test('main() --branches with no data in the default (trailing-month) range write
 
     try {
       // when
-      report.main(['--branches']);
+      report.main(['--git_project']);
 
       // then
       assert.ok(logs.some(l => l.includes('local.sqlite has no entries')));
@@ -207,23 +246,29 @@ test('main() --branches with no data in the default (trailing-month) range write
   });
 });
 
-test('main() --branches --from --to uses the explicit range instead of the default', () => {
+test('main() --git_project --from --to uses the explicit range and writes all three sections', () => {
   inReportSandbox((report, hook) => {
     // given — well outside the default trailing-month window, but inside --from/--to
-    hook.writeLocalHistory(sampleEntry({ project: 'backend', branch: 'send-data', timestamp: '2020-05-15T00:00:00.000Z' }));
+    hook.writeLocalHistory(sampleEntry({
+      project: 'backend', git_project: 'backend', branch: 'send-data', timestamp: '2020-05-15T00:00:00.000Z',
+    }));
     const logs = [];
     const origLog = console.log;
     console.log = (...args) => logs.push(args.join(' '));
 
     try {
       // when
-      report.main(['--branches', '--from', '2020-05-01', '--to', '2020-05-31']);
+      report.main(['--git_project', '--from', '2020-05-01', '--to', '2020-05-31']);
 
       // then
       const match = logs[0]?.match(/^Report written to: (.+)$/);
       assert.ok(match, `expected a written-report log line, got: ${JSON.stringify(logs)}`);
       const content = fs.readFileSync(match[1], 'utf8');
+      assert.ok(content.startsWith('# Git Project Token Usage Report'));
       assert.ok(content.includes('Range: 2020-05-01 – 2020-05-31'));
+      assert.ok(content.includes('## By git_project'));
+      assert.ok(content.includes('## By Branch'));
+      assert.ok(content.includes('## By Model & Type'));
       assert.ok(content.includes('send-data'));
     } finally {
       console.log = origLog;
@@ -231,7 +276,32 @@ test('main() --branches --from --to uses the explicit range instead of the defau
   });
 });
 
-test('main() --branches with a malformed --from prints usage and exits 1, without writing local.sqlite', () => {
+test('main() --project uses `project` as the identity column, with its own label', () => {
+  inReportSandbox((report, hook) => {
+    // given
+    hook.writeLocalHistory(sampleEntry({
+      project: 'backend', git_project: 'backend', branch: 'send-data', timestamp: '2020-05-15T00:00:00.000Z',
+    }));
+    const logs = [];
+    const origLog = console.log;
+    console.log = (...args) => logs.push(args.join(' '));
+
+    try {
+      // when
+      report.main(['--project', '--from', '2020-05-01', '--to', '2020-05-31']);
+
+      // then
+      const match = logs[0]?.match(/^Report written to: (.+)$/);
+      const content = fs.readFileSync(match[1], 'utf8');
+      assert.ok(content.startsWith('# Project Token Usage Report'));
+      assert.ok(content.includes('## By project'));
+    } finally {
+      console.log = origLog;
+    }
+  });
+});
+
+test('main() with a malformed --from prints usage and exits 1, without writing local.sqlite', () => {
   inReportSandbox((report, hook) => {
     // given
     const errors = [];
@@ -240,11 +310,11 @@ test('main() --branches with a malformed --from prints usage and exits 1, withou
 
     try {
       // when
-      report.main(['--branches', '--from', 'not-a-date']);
+      report.main(['--git_project', '--from', 'not-a-date']);
 
       // then
       assert.equal(process.exitCode, 1);
-      assert.ok(errors.some(l => l.includes('--branches')));
+      assert.ok(errors.some(l => l.includes('--git_project')));
       assert.ok(!fs.existsSync(hook.LOCAL_HISTORY_DB_PATH));
     } finally {
       console.error = origError;
@@ -253,7 +323,7 @@ test('main() --branches with a malformed --from prints usage and exits 1, withou
   });
 });
 
-test('main() usage message lists --branches alongside --weekly/--monthly', () => {
+test('main() usage message lists --git_project and --project alongside --weekly/--monthly, not --branches', () => {
   inReportSandbox(report => {
     // given
     const errors = [];
@@ -265,7 +335,8 @@ test('main() usage message lists --branches alongside --weekly/--monthly', () =>
       report.main([]);
 
       // then
-      assert.ok(errors.some(l => l.includes('--weekly') && l.includes('--monthly') && l.includes('--branches')));
+      assert.ok(errors.some(l => l.includes('--weekly') && l.includes('--monthly') && l.includes('--git_project') && l.includes('--project')));
+      assert.ok(!errors.some(l => l.includes('--branches')));
     } finally {
       console.error = origError;
       process.exitCode = undefined;

@@ -106,12 +106,19 @@ Once the `statusLine` entry is gone from `settings.json`, nothing reads the file
 ## Local history & reports
 
 Besides the entries sent to your backend, the plugin keeps a local, per-turn usage history in `~/.claude/tokendashboard-plugin/local.sqlite` — queryable entirely offline, never sent anywhere. 
-Generate a Markdown report with:
+Generate a Markdown report with one of:
 
 ```bash
-node ~/.claude/tokendashboard-plugin/report.js --weekly    # or --monthly
-node ~/.claude/tokendashboard-plugin/report.js --branches [--from YYYY-MM-DD] [--to YYYY-MM-DD]
+node ~/.claude/tokendashboard-plugin/report.js --weekly      # bucketed by calendar week
+node ~/.claude/tokendashboard-plugin/report.js --monthly     # bucketed by calendar month
+node ~/.claude/tokendashboard-plugin/report.js --git_project [--from YYYY-MM-DD] [--to YYYY-MM-DD]  # lifetime totals, grouped by repo
+node ~/.claude/tokendashboard-plugin/report.js --project     [--from YYYY-MM-DD] [--to YYYY-MM-DD]  # lifetime totals, grouped by folder name
 ```
+
+Exactly one flag per run. Reports are written to `~/.claude/tokendashboard-plugin/reports/` (nothing printed to the terminal, nothing written when there's no data) — the command prints the file path.
+
+- **`--weekly`/`--monthly`** bucket by calendar period, one table per period, columns `project | git_project | branch | type | entries | in | out | cache_write | cache_read | price`.
+- **`--git_project`/`--project`** don't bucket by period at all — they total everything in `[--from, --to]` (default: the trailing month) and render **three tables in one report**: grouped by project alone, by project+branch (cost per feature), and by project+model+type (which models/skills drive cost). The two flags differ only in which column counts as "project": `--git_project` uses the enclosing repo directory (keeps two independently-cloned same-named checkouts apart), `--project` uses the checked-out folder's own name. Pick whichever matches how you actually organize repos — there's no default, since that's too situational to bake in.
 
 This needs Node 22.13+ (`node:sqlite`) in whichever terminal Claude Code actually runs in — checked fresh on every session, independent of the Node version used to install or update the plugin. 
 On an older Node, everything else (queue sync, statusline) keeps working as usual; local history and `report.js` just stay inactive, and `install` prints a note about it.

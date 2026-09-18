@@ -36,6 +36,7 @@ const PERIOD_REPORT_QUERY = `
   SELECT
     strftime(?, timestamp) AS period,
     COALESCE(project, '(none)') AS project,
+    COALESCE(git_project, '(none)') AS git_project,
     COALESCE(branch, '(none)') AS branch,
     COALESCE(type, '(none)') AS type,
     COUNT(*) AS entries,
@@ -45,8 +46,8 @@ const PERIOD_REPORT_QUERY = `
     SUM(cache_read_tokens) AS cache_read_tokens,
     SUM(price_cents) AS price_cents
   FROM usage_entries
-  GROUP BY period, project, branch, type
-  ORDER BY period, project, branch, type
+  GROUP BY period, project, git_project, branch, type
+  ORDER BY period, project, git_project, branch, type
 `;
 
 // One entry per supported CLI flag — the only thing that differs between report periods
@@ -64,34 +65,71 @@ function periodReport(db, strftimeFmt) {
   return db.prepare(PERIOD_REPORT_QUERY).all(strftimeFmt);
 }
 
-// --- `--branches` mode: lifetime totals grouped by project/branch, NOT bucketed by
-// calendar period — answers "what did this branch cost", not "what happened in week Y"
-const BRANCH_REPORT_GROUP_COLS = ['project', 'branch', 'type'];
+// --- `--git_project`/`--project` modes: lifetime totals, NOT bucketed by calendar period
+// — answer "what did this cost", not "what happened in week Y". Both produce the same
+// three sections (identity alone, identity+branch, identity+model+type) but differ in
+// which column is "identity": `git_project` (the enclosing repo dir — dedupes same-named
+// checkouts) or `project` (the base-worktree folder name). Picking one over the other is
+// too situational to bake in as a single default (see CLAUDE.md) — two flags, not one
+// report with a hardcoded grouping.
+const LIFETIME_REPORTS = {
+  '--git_project': { identityCol: 'git_project', label: 'Git Project' },
+  '--project': { identityCol: 'project', label: 'Project' },
+};
 
-const BRANCH_REPORT_QUERY = `
-  SELECT
-    COALESCE(project, '(none)') AS project,
-    COALESCE(branch, '(none)') AS branch,
-    COALESCE(type, '(none)') AS type,
-    COUNT(*) AS entries,
-    SUM(input_tokens) AS input_tokens,
-    SUM(output_tokens) AS output_tokens,
-    SUM(cache_write_tokens + ephemeral_5m_tokens + ephemeral_1h_tokens) AS cache_write_tokens,
-    SUM(cache_read_tokens) AS cache_read_tokens,
-    SUM(price_cents) AS price_cents
-  FROM usage_entries
-  WHERE timestamp >= ? AND timestamp <= ?
-  GROUP BY project, branch, type
-  ORDER BY branch IS NULL, entries DESC
-`;
+// The three fixed sections for one identity column. Exported separately from
+// LIFETIME_REPORTS so a test (or a future third identity column) can build the section
+// list directly.
+function branchSectionsFor(identityCol) {
+  return [
+    { title: `By ${identityCol}`, groupCols: [identityCol] },
+    { title: 'By Branch', groupCols: [identityCol, 'branch'] },
+    { title: 'By Model & Type', groupCols: [identityCol, 'model', 'type'] },
+  ];
+}
 
-// Runs the --branches aggregation against an already-open DatabaseSync, bounded to
+// Builds a GROUP BY query for one fixed set of dimension columns (from BRANCH_REPORTS —
+// never user input, so string-joining the column names into the query text is safe).
+// Rows with a NULL `branch` sort last regardless of entry count — untagged/uncategorized
+// work shouldn't outrank a real branch just because it happens to have more turns.
+function buildGroupedQuery(groupCols) {
+  const dimensionCols = groupCols.map(c => `COALESCE(${c}, '(none)') AS ${c}`).join(',\n    ');
+  const orderPrefix = groupCols.includes('branch') ? 'branch IS NULL, ' : '';
+  return `
+    SELECT
+      ${dimensionCols},
+      COUNT(*) AS entries,
+      SUM(input_tokens) AS input_tokens,
+      SUM(output_tokens) AS output_tokens,
+      SUM(cache_write_tokens + ephemeral_5m_tokens + ephemeral_1h_tokens) AS cache_write_tokens,
+      SUM(cache_read_tokens) AS cache_read_tokens,
+      SUM(price_cents) AS price_cents
+    FROM usage_entries
+    WHERE timestamp >= ? AND timestamp <= ?
+    GROUP BY ${groupCols.join(', ')}
+    ORDER BY ${orderPrefix}entries DESC
+  `;
+}
+
+// Runs one grouped aggregation against an already-open DatabaseSync, bounded to
 // [from, to] (full ISO timestamps, inclusive). Exported separately so tests can seed
-// fixture rows and assert on the returned rows directly. Rows with a NULL branch sort
-// last, regardless of entry count — untagged/uncategorized work shouldn't outrank a real
-// branch just because it happens to have more turns.
-function branchReport(db, from, to) {
-  return db.prepare(BRANCH_REPORT_QUERY).all(from, to);
+// fixture rows and assert on the returned rows directly.
+function groupedReport(db, groupCols, from, to) {
+  return db.prepare(buildGroupedQuery(groupCols)).all(from, to);
+}
+
+// Column set for one BRANCH_REPORTS section: its own dimension columns first (in the
+// order given), then the same fixed aggregate columns every section shares.
+function columnsFor(groupCols) {
+  return [
+    ...groupCols.map(c => ({ header: c, value: row => row[c] })),
+    { header: 'entries', value: row => row.entries },
+    { header: 'in', value: row => row.input_tokens },
+    { header: 'out', value: row => row.output_tokens },
+    { header: 'cache_write', value: row => row.cache_write_tokens },
+    { header: 'cache_read', value: row => row.cache_read_tokens },
+    { header: 'price', value: row => formatCents(row.price_cents) },
+  ];
 }
 
 // Default window when neither --from nor --to is given: the trailing month up to now —
@@ -111,6 +149,7 @@ function formatCents(cents) {
 // can no longer drift out of sync.
 const REPORT_COLUMNS = [
   { header: 'project', value: row => row.project },
+  { header: 'git_project', value: row => row.git_project },
   { header: 'branch', value: row => row.branch },
   { header: 'type', value: row => row.type },
   { header: 'entries', value: row => row.entries },
@@ -143,35 +182,31 @@ function formatReportMarkdown(rows, label) {
   return lines.join('\n');
 }
 
-const BRANCH_REPORT_COLUMNS = [
-  { header: 'project', value: row => row.project },
-  { header: 'branch', value: row => row.branch },
-  { header: 'type', value: row => row.type },
-  { header: 'entries', value: row => row.entries },
-  { header: 'in', value: row => row.input_tokens },
-  { header: 'out', value: row => row.output_tokens },
-  { header: 'cache_write', value: row => row.cache_write_tokens },
-  { header: 'cache_read', value: row => row.cache_read_tokens },
-  { header: 'price', value: row => formatCents(row.price_cents) },
-];
-
 // `null` (not a string) when there is no data, same contract as formatReportMarkdown —
-// a single table (lifetime totals in [from, to]), not bucketed by calendar period.
-function formatBranchReportMarkdown(rows, from, to) {
-  if (rows.length === 0) {
+// all three sections query the same table over the same [from, to], so they are either
+// all empty (no entries in range) or all non-empty; never a mix. `reportsData` is
+// branchSectionsFor(identityCol) enriched with each section's own `rows` (see main()) —
+// one `##` heading + table per section, in that order. `label` names the identity column
+// for the top heading (see LIFETIME_REPORTS), same role as formatReportMarkdown's period
+// label.
+function formatBranchReportMarkdown(reportsData, from, to, label) {
+  if (reportsData.every(r => r.rows.length === 0)) {
     return null;
   }
-  const headerLine = `| ${BRANCH_REPORT_COLUMNS.map(c => c.header).join(' | ')} |`;
-  const separatorLine = `|${BRANCH_REPORT_COLUMNS.map(() => '---').join('|')}|`;
   const lines = [
-    '# Branches Token Usage Report', '',
+    `# ${label} Token Usage Report`, '',
     `Range: ${from.slice(0, 10)} – ${to.slice(0, 10)}`, '',
-    headerLine, separatorLine,
   ];
-  for (const row of rows) {
-    lines.push(`| ${BRANCH_REPORT_COLUMNS.map(c => c.value(row)).join(' | ')} |`);
+  for (const { title, groupCols, rows } of reportsData) {
+    const columns = columnsFor(groupCols);
+    const headerLine = `| ${columns.map(c => c.header).join(' | ')} |`;
+    const separatorLine = `|${columns.map(() => '---').join('|')}|`;
+    lines.push(`## ${title}`, '', headerLine, separatorLine);
+    for (const row of rows) {
+      lines.push(`| ${columns.map(c => c.value(row)).join(' | ')} |`);
+    }
+    lines.push('');
   }
-  lines.push('');
   return lines.join('\n');
 }
 
@@ -190,12 +225,12 @@ function writeReport(markdown, now = new Date()) {
   return filePath;
 }
 
-const REPORT_FLAGS = [...Object.keys(PERIODS), '--branches'];
+const REPORT_FLAGS = [...Object.keys(PERIODS), ...Object.keys(LIFETIME_REPORTS)];
 const USAGE = `Usage: report.js <${REPORT_FLAGS.join('|')}> [--from YYYY-MM-DD] [--to YYYY-MM-DD]`;
 
 const DATE_ARG_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-// Reads `--from`/`--to <YYYY-MM-DD>` out of argv (--branches only — see main()).
+// Reads `--from`/`--to <YYYY-MM-DD>` out of argv (LIFETIME_REPORTS modes only — see main()).
 // { present: false } when the flag is absent; { present: true, error: true } when given
 // without a validly-formatted value; otherwise { present: true, value }.
 function parseDateFlag(argv, flag) {
@@ -219,11 +254,11 @@ function main(argv = process.argv.slice(2)) {
   }
   const flag = matchedFlags[0];
 
-  // --from/--to only apply to --branches (the period modes have no notion of a bound
-  // range yet) — validated up front, before opening the DB, so a bad flag never leaves a
-  // dangling open handle.
+  // --from/--to only apply to the LIFETIME_REPORTS modes (the period modes have no notion
+  // of a bound range yet) — validated up front, before opening the DB, so a bad flag never
+  // leaves a dangling open handle.
   let range = null;
-  if (flag === '--branches') {
+  if (flag in LIFETIME_REPORTS) {
     const fromArg = parseDateFlag(argv, '--from');
     const toArg = parseDateFlag(argv, '--to');
     if (fromArg.error || toArg.error) {
@@ -245,8 +280,14 @@ function main(argv = process.argv.slice(2)) {
   }
   let markdown;
   try {
-    if (flag === '--branches') {
-      markdown = formatBranchReportMarkdown(branchReport(db, range.from, range.to), range.from, range.to);
+    if (flag in LIFETIME_REPORTS) {
+      const { identityCol, label } = LIFETIME_REPORTS[flag];
+      const reportsData = branchSectionsFor(identityCol).map(({ title, groupCols }) => ({
+        title,
+        groupCols,
+        rows: groupedReport(db, groupCols, range.from, range.to),
+      }));
+      markdown = formatBranchReportMarkdown(reportsData, range.from, range.to, label);
     } else {
       const { strftimeFmt, label } = PERIODS[flag];
       markdown = formatReportMarkdown(periodReport(db, strftimeFmt), label);
@@ -270,12 +311,13 @@ module.exports = {
   LOCAL_HISTORY_DB_PATH,
   REPORTS_DIR,
   PERIODS,
-  BRANCH_REPORT_GROUP_COLS,
+  LIFETIME_REPORTS,
+  branchSectionsFor,
   REPORT_COLUMNS,
-  BRANCH_REPORT_COLUMNS,
+  columnsFor,
   openReadOnly,
   periodReport,
-  branchReport,
+  groupedReport,
   defaultReportRange,
   parseDateFlag,
   formatReportMarkdown,

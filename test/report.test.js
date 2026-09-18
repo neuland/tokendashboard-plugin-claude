@@ -155,6 +155,7 @@ test('periodReport aggregates multiple entries in the same period/project/branch
     assert.equal(row.entries, 2);
     assert.equal(row.input_tokens, 110);
     assert.equal(row.output_tokens, 220);
+    assert.equal(row.git_project, '(none)');
     assert.equal(row.cache_read_tokens, 33);
     assert.equal(row.cache_write_tokens, 44);
     assert.equal(row.price_cents, 17.75);
@@ -190,6 +191,33 @@ test('periodReport keeps different periods, and different project/branch values,
     assert.ok(tagged);
     assert.equal(tagged.branch, 'receive-answer');
     assert.equal(tagged.entries, 1);
+  });
+});
+
+test('periodReport keeps two same-named projects with different git_project as separate rows', () => {
+  inReportSandbox((report, hook) => {
+    // given — two independent checkouts both named "backend" (project = folder basename,
+    // meaningless for disambiguation), but distinct git_project (the enclosing repo dir)
+    hook.writeLocalHistory(sampleEntry({
+      entry_id: 'e1', project: 'backend', git_project: 'client-a-backend',
+    }));
+    hook.writeLocalHistory(sampleEntry({
+      entry_id: 'e2', project: 'backend', git_project: 'client-b-backend',
+    }));
+
+    // when
+    const db = report.openReadOnly();
+    let rows;
+    try {
+      rows = report.periodReport(db, report.PERIODS['--weekly'].strftimeFmt);
+    } finally {
+      db.close();
+    }
+
+    // then — same project/period/branch/type, but git_project keeps them apart
+    assert.equal(rows.length, 2);
+    const gitProjects = rows.map(r => r.git_project).sort();
+    assert.deepEqual(gitProjects, ['client-a-backend', 'client-b-backend']);
   });
 });
 
@@ -232,7 +260,7 @@ test('formatReportMarkdown renders a heading + table per period bucket, labeled 
     // then
     assert.ok(text.startsWith('# Weekly Token Usage Report'));
     assert.ok(text.includes('## 2026-W36'));
-    assert.ok(text.includes('| project | branch | type | entries |'));
+    assert.ok(text.includes('| project | git_project | branch | type | entries |'));
     assert.ok(text.includes(report.formatCents(5.5)));
 
     // and — the data row must have exactly as many cells as the header row (regression
@@ -246,11 +274,8 @@ test('formatReportMarkdown renders a heading + table per period bucket, labeled 
     assert.equal(cellCount(dataLine), cellCount(headerLine));
     const dataCols = dataLine.split('|').filter(s => s.trim() !== '');
     assert.equal(dataCols[dataCols.length - 1].trim(), report.formatCents(5.5));
-    // cache_write (4) must land before cache_read (3), matching the
-    // header's cache_write | cache_read order (cache_read is the harder-to-read big number,
-    // pushed last)
-    assert.equal(dataCols[6].trim(), '4');
-    assert.equal(dataCols[7].trim(), '3');
+    assert.equal(dataCols[7].trim(), '4');
+    assert.equal(dataCols[8].trim(), '3');
   });
 });
 
@@ -259,7 +284,7 @@ test('REPORT_COLUMNS defines the exact period-report column set and order', () =
     // given / when / then — pins the column contract so a future edit that changes it is
     // a deliberate, visible test change, not a silent header/row drift
     assert.deepEqual(report.REPORT_COLUMNS.map(c => c.header), [
-      'project', 'branch', 'type', 'entries',
+      'project', 'git_project', 'branch', 'type', 'entries',
       'in', 'out', 'cache_write', 'cache_read', 'price',
     ]);
   });
