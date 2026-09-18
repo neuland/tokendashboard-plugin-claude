@@ -452,7 +452,7 @@ function findTurnOrigins(lines, sessionId) {
 
 // Only trailing turns can be un-captured (older turns were already flushed) — this bound
 // keeps SessionEnd's re-send volume small; it's a cost bound, not a correctness requirement.
-const CATCH_UP_MAX_TURNS = 10;
+const CATCH_UP_MAX_TURNS = 20;
 
 async function catchUpCapture(hookData) {
   const { transcript_path: transcriptPath, session_id: sessionId } = hookData;
