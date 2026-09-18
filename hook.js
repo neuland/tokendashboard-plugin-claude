@@ -256,7 +256,12 @@ function writeLocalHistory(entry) {
       entry.model,
       usage.input_tokens ?? 0,
       usage.output_tokens ?? 0,
-      usage.cache_creation_input_tokens ?? 0,
+      Math.max(
+        (usage.cache_creation_input_tokens ?? 0)
+        - (usage.ephemeral_5m_input_tokens ?? 0)
+        - (usage.ephemeral_1h_input_tokens ?? 0),
+        0,
+      ),
       usage.cache_read_input_tokens ?? 0,
       usage.ephemeral_5m_input_tokens ?? 0,
       usage.ephemeral_1h_input_tokens ?? 0,

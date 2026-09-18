@@ -67,7 +67,8 @@ test('openLocalHistoryDb is idempotent — reopening an existing DB does not err
 
 test('writeLocalHistory inserts a row with the full token breakdown and optional fields', () => {
   inSandbox(hook => {
-    // given
+    // given — cache_creation_input_tokens (4) > ephemeral 5m+1h breakdown (2+1=3),
+    // so cache_write_tokens stores only the remainder (1), not the raw 4
     const entry = sampleEntry({ project: 'proj', branch: 'main' });
 
     // when
@@ -83,12 +84,48 @@ test('writeLocalHistory inserts a row with the full token breakdown and optional
       assert.equal(row.input_tokens, 10);
       assert.equal(row.output_tokens, 20);
       assert.equal(row.cache_read_tokens, 3);
-      assert.equal(row.cache_write_tokens, 4);
+      assert.equal(row.cache_write_tokens, 1);
       assert.equal(row.ephemeral_5m_tokens, 2);
       assert.equal(row.ephemeral_1h_tokens, 1);
       assert.equal(row.price_cents, 5.5);
       assert.equal(row.project, 'proj');
       assert.equal(row.branch, 'main');
+    } finally {
+      db.close();
+    }
+  });
+});
+
+test('writeLocalHistory stores cache_write_tokens as the remainder above the ephemeral breakdown', () => {
+  inSandbox(hook => {
+    // given/when/then — remainder above the 5m+1h breakdown (10 - 6 - 3 = 1)
+    hook.writeLocalHistory(sampleEntry({
+      entry_id: 'remainder',
+      usage: { cache_creation_input_tokens: 10, ephemeral_5m_input_tokens: 6, ephemeral_1h_input_tokens: 3 },
+    }));
+
+    // given/when/then — breakdown covers (or exceeds) cache_creation_input_tokens entirely: clamp to 0, never negative
+    hook.writeLocalHistory(sampleEntry({
+      entry_id: 'exact',
+      usage: { cache_creation_input_tokens: 9, ephemeral_5m_input_tokens: 6, ephemeral_1h_input_tokens: 3 },
+    }));
+    hook.writeLocalHistory(sampleEntry({
+      entry_id: 'exceeds',
+      usage: { cache_creation_input_tokens: 5, ephemeral_5m_input_tokens: 6, ephemeral_1h_input_tokens: 3 },
+    }));
+
+    // given/when/then — no ephemeral breakdown at all: cache_write_tokens falls back to the raw total
+    hook.writeLocalHistory(sampleEntry({
+      entry_id: 'no-breakdown',
+      usage: { cache_creation_input_tokens: 4 },
+    }));
+
+    const db = hook.openLocalHistoryDb();
+    try {
+      assert.equal(db.prepare('SELECT cache_write_tokens FROM usage_entries WHERE entry_id = ?').get('remainder').cache_write_tokens, 1);
+      assert.equal(db.prepare('SELECT cache_write_tokens FROM usage_entries WHERE entry_id = ?').get('exact').cache_write_tokens, 0);
+      assert.equal(db.prepare('SELECT cache_write_tokens FROM usage_entries WHERE entry_id = ?').get('exceeds').cache_write_tokens, 0);
+      assert.equal(db.prepare('SELECT cache_write_tokens FROM usage_entries WHERE entry_id = ?').get('no-breakdown').cache_write_tokens, 4);
     } finally {
       db.close();
     }

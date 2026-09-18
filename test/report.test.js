@@ -155,7 +155,7 @@ test('periodReport aggregates multiple entries in the same period/project/branch
     assert.equal(row.entries, 2);
     assert.equal(row.input_tokens, 110);
     assert.equal(row.output_tokens, 220);
-    assert.equal(row.cache_read_tokens, 66);
+    assert.equal(row.cache_read_tokens, 33);
     assert.equal(row.cache_write_tokens, 44);
     assert.equal(row.price_cents, 17.75);
   });
@@ -246,11 +246,11 @@ test('formatReportMarkdown renders a heading + table per period bucket, labeled 
     assert.equal(cellCount(dataLine), cellCount(headerLine));
     const dataCols = dataLine.split('|').filter(s => s.trim() !== '');
     assert.equal(dataCols[dataCols.length - 1].trim(), report.formatCents(5.5));
-    // cache_write (4) must land before cache_read (3 + ephemeral 2 + 1 = 6), matching the
+    // cache_write (4) must land before cache_read (3), matching the
     // header's cache_write | cache_read order (cache_read is the harder-to-read big number,
     // pushed last)
     assert.equal(dataCols[6].trim(), '4');
-    assert.equal(dataCols[7].trim(), '6');
+    assert.equal(dataCols[7].trim(), '3');
   });
 });
 

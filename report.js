@@ -41,8 +41,8 @@ const PERIOD_REPORT_QUERY = `
     COUNT(*) AS entries,
     SUM(input_tokens) AS input_tokens,
     SUM(output_tokens) AS output_tokens,
-    SUM(cache_write_tokens) AS cache_write_tokens,
-    SUM(cache_read_tokens + ephemeral_5m_tokens + ephemeral_1h_tokens) AS cache_read_tokens,
+    SUM(cache_write_tokens + ephemeral_5m_tokens + ephemeral_1h_tokens) AS cache_write_tokens,
+    SUM(cache_read_tokens) AS cache_read_tokens,
     SUM(price_cents) AS price_cents
   FROM usage_entries
   GROUP BY period, project, branch, type
@@ -76,8 +76,8 @@ const BRANCH_REPORT_QUERY = `
     COUNT(*) AS entries,
     SUM(input_tokens) AS input_tokens,
     SUM(output_tokens) AS output_tokens,
-    SUM(cache_write_tokens) AS cache_write_tokens,
-    SUM(cache_read_tokens + ephemeral_5m_tokens + ephemeral_1h_tokens) AS cache_read_tokens,
+    SUM(cache_write_tokens + ephemeral_5m_tokens + ephemeral_1h_tokens) AS cache_write_tokens,
+    SUM(cache_read_tokens) AS cache_read_tokens,
     SUM(price_cents) AS price_cents
   FROM usage_entries
   WHERE timestamp >= ? AND timestamp <= ?
