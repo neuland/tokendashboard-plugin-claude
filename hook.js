@@ -417,6 +417,13 @@ function detectSkillType(originEntry) {
   if (typeof content !== 'string') {
     return null;
   }
+  // Anchored to the start of the content: the wrapper only ever marks a real slash-command
+  // invocation there. An unanchored search would also match a user prompt that merely
+  // quotes/pastes a `<command-name>...</command-name>` snippet (e.g. discussing a transcript
+  // excerpt) anywhere in its text, falsely tagging an ordinary main-turn row as a skill.
+  if (!content.startsWith('<command-message>') && !content.startsWith('<command-name>')) {
+    return null;
+  }
   return content.match(COMMAND_NAME_RE)?.[1] ?? null;
 }
 
@@ -590,6 +597,15 @@ function isCountableAssistant(entry) {
 // a diverging definition would drift catch-up's entryId from Stop's, defeating dedup.
 function isTurnOriginEntry(entry) {
   if (entry?.type !== 'user') {
+    return false;
+  }
+  // `isMeta` marks a synthetic entry Claude Code injects itself, never one the user typed —
+  // e.g. a Skill invocation's own SKILL.md body, appended right after the real command entry
+  // as an additional non-tool_result `user`-type line (observed behavior, not documented).
+  // Without this exclusion the backward origin-scan in capture()/findTurnOrigins stops on
+  // that injected entry instead of the real origin one line earlier, and detectSkillType
+  // sees its array content (not a string) and silently falls back to MAIN_AGENT_TYPE.
+  if (entry.isMeta === true) {
     return false;
   }
   const content = entry.message?.content;

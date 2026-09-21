@@ -43,14 +43,24 @@ function firstLocalHistoryRow(hook) {
 
 test('detectSkillType extracts the skill name from a <command-name> wrapper, or null otherwise', () => {
   const wrapped = { message: { content: '<command-name>/improve</command-name>\nsome args' } };
+  const withMessage = { message: { content: '<command-message>improve</command-message>\n<command-name>/improve</command-name>\n<command-args>x</command-args>' } };
   const plain = { message: { content: 'just a regular prompt' } };
   const nonString = { message: { content: [{ type: 'text', text: 'hi' }] } };
 
   assert.equal(detectSkillType(wrapped), 'improve');
+  assert.equal(detectSkillType(withMessage), 'improve');
   assert.equal(detectSkillType(plain), null);
   assert.equal(detectSkillType(nonString), null);
   assert.equal(detectSkillType(null), null);
   assert.equal(detectSkillType(undefined), null);
+});
+
+test('detectSkillType ignores a <command-name> wrapper that is merely quoted mid-string, not the real wrapper at the start', () => {
+  // given — a user prompt that pastes/discusses a transcript excerpt containing the exact
+  // wrapper text, without it actually being a slash-command invocation
+  const quoted = { message: { content: 'I found this in the transcript-file: `<command-name>/improve</command-name>`' } };
+
+  assert.equal(detectSkillType(quoted), null);
 });
 
 test('capture() tags a plain main-turn row with MAIN_AGENT_TYPE', async () => {
@@ -77,6 +87,26 @@ test('capture() tags a user-typed slash-command turn with the skill name', async
     const transcriptPath = path.join(home, 'transcript.jsonl');
     fs.writeFileSync(transcriptPath, [
       JSON.stringify({ type: 'user', message: { content: '<command-name>/improve</command-name>' } }),
+      assistantLine('m1', 'claude-opus-4-8', { input_tokens: 1, output_tokens: 1 }),
+    ].join('\n') + '\n');
+
+    // when
+    await hook.capture({ transcript_path: transcriptPath, session_id: 'sess-1' });
+
+    // then
+    assert.equal(firstLocalHistoryRow(hook).type, 'improve');
+  });
+});
+
+test('capture() skips a Claude-Code-injected isMeta entry when scanning back for the turn origin', async () => {
+  await inSandboxAsync(async (hook, home) => {
+    // given — the real command entry, followed by a synthetic isMeta `user` entry (Claude
+    // Code's own Skill-body injection) whose array content is not a string and not a
+    // tool_result either — it must not be mistaken for the turn origin
+    const transcriptPath = path.join(home, 'transcript.jsonl');
+    fs.writeFileSync(transcriptPath, [
+      JSON.stringify({ type: 'user', message: { content: '<command-name>/improve</command-name>' } }),
+      JSON.stringify({ type: 'user', isMeta: true, message: { content: [{ type: 'text', text: 'SKILL.md body' }] } }),
       assistantLine('m1', 'claude-opus-4-8', { input_tokens: 1, output_tokens: 1 }),
     ].join('\n') + '\n');
 
