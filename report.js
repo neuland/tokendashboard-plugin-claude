@@ -2,7 +2,7 @@
 
 'use strict';
 
-// Standalone report CLI for the local usage history.
+// Standalone report CLI for the local usage storage.
 // Invoked directly — `node ~/.claude/tokendashboard-plugin/report.js --weekly` (or
 // `--monthly`, see PERIODS below) — not through any hook event, so it does not
 // require() hook.js/updater.js.
@@ -13,13 +13,13 @@ const os = require('os');
 
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 const PLUGIN_DIR = path.join(CLAUDE_DIR, 'tokendashboard-plugin');
-const LOCAL_HISTORY_DB_PATH = path.join(PLUGIN_DIR, 'local.sqlite');
+const LOCAL_STORAGE_DB_PATH = path.join(PLUGIN_DIR, 'local.sqlite');
 // Sibling of queue/ (not inside it — reports are a CLI output, not a telemetry payload).
 const REPORTS_DIR = path.join(PLUGIN_DIR, 'reports');
 
 // Opens local.sqlite read-only. Returns null (not a throw) when the file does not exist
 // yet (no capture has ever run) — the caller renders that as "no data", not a crash.
-function openReadOnly(dbPath = LOCAL_HISTORY_DB_PATH) {
+function openReadOnly(dbPath = LOCAL_STORAGE_DB_PATH) {
   const { DatabaseSync } = require('node:sqlite');
   try {
     return new DatabaseSync(dbPath, { readOnly: true });
@@ -308,7 +308,7 @@ if (require.main === module) {
 }
 
 module.exports = {
-  LOCAL_HISTORY_DB_PATH,
+  LOCAL_STORAGE_DB_PATH,
   REPORTS_DIR,
   PERIODS,
   LIFETIME_REPORTS,

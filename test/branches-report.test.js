@@ -53,11 +53,11 @@ test('branchSectionsFor builds the three fixed sections for a given identity col
 });
 
 test('groupedReport groups by git_project alone, disambiguating same-named projects', () => {
-  inReportSandbox((report, hook) => {
+  inReportSandbox((report, localStorage) => {
     // given — two independent checkouts both named "backend"
-    hook.writeLocalHistory(sampleEntry({ entry_id: 'e1', project: 'backend', git_project: 'client-a-backend' }));
-    hook.writeLocalHistory(sampleEntry({ entry_id: 'e2', project: 'backend', git_project: 'client-a-backend' }));
-    hook.writeLocalHistory(sampleEntry({ entry_id: 'e3', project: 'backend', git_project: 'client-b-backend' }));
+    localStorage.writeLocalStorage(sampleEntry({ entry_id: 'e1', project: 'backend', git_project: 'client-a-backend' }));
+    localStorage.writeLocalStorage(sampleEntry({ entry_id: 'e2', project: 'backend', git_project: 'client-a-backend' }));
+    localStorage.writeLocalStorage(sampleEntry({ entry_id: 'e3', project: 'backend', git_project: 'client-b-backend' }));
 
     // when
     const db = report.openReadOnly();
@@ -76,12 +76,12 @@ test('groupedReport groups by git_project alone, disambiguating same-named proje
 });
 
 test('groupedReport groups by an identity column + branch, and sorts NULL-branch rows last regardless of entry count', () => {
-  inReportSandbox((report, hook) => {
+  inReportSandbox((report, localStorage) => {
     // given — an untagged bucket with MORE entries than the tagged one
     for (let i = 0; i < 5; i++) {
-      hook.writeLocalHistory(sampleEntry({ entry_id: `untagged-${i}` })); // no branch/project
+      localStorage.writeLocalStorage(sampleEntry({ entry_id: `untagged-${i}` })); // no branch/project
     }
-    hook.writeLocalHistory(sampleEntry({
+    localStorage.writeLocalStorage(sampleEntry({
       entry_id: 'tagged', project: 'backend', branch: 'send-data',
     }));
 
@@ -104,15 +104,15 @@ test('groupedReport groups by an identity column + branch, and sorts NULL-branch
 });
 
 test('groupedReport groups by identityCol+model+type for usage analysis', () => {
-  inReportSandbox((report, hook) => {
+  inReportSandbox((report, localStorage) => {
     // given — same project, two different models, one of them used by a subagent
-    hook.writeLocalHistory(sampleEntry({
+    localStorage.writeLocalStorage(sampleEntry({
       entry_id: 'e1', project: 'backend', model: 'claude-opus-4-8', type: 'main-agent',
     }));
-    hook.writeLocalHistory(sampleEntry({
+    localStorage.writeLocalStorage(sampleEntry({
       entry_id: 'e2', project: 'backend', model: 'claude-opus-4-8', type: 'main-agent',
     }));
-    hook.writeLocalHistory(sampleEntry({
+    localStorage.writeLocalStorage(sampleEntry({
       entry_id: 'e3', project: 'backend', model: 'claude-haiku-4-5', type: 'subagent',
     }));
 
@@ -136,11 +136,11 @@ test('groupedReport groups by identityCol+model+type for usage analysis', () => 
 });
 
 test('groupedReport only counts entries inside [from, to]', () => {
-  inReportSandbox((report, hook) => {
+  inReportSandbox((report, localStorage) => {
     // given
-    hook.writeLocalHistory(sampleEntry({ entry_id: 'in-range', timestamp: '2026-06-15T00:00:00.000Z' }));
-    hook.writeLocalHistory(sampleEntry({ entry_id: 'too-early', timestamp: '2026-01-01T00:00:00.000Z' }));
-    hook.writeLocalHistory(sampleEntry({ entry_id: 'too-late', timestamp: '2026-12-31T00:00:00.000Z' }));
+    localStorage.writeLocalStorage(sampleEntry({ entry_id: 'in-range', timestamp: '2026-06-15T00:00:00.000Z' }));
+    localStorage.writeLocalStorage(sampleEntry({ entry_id: 'too-early', timestamp: '2026-01-01T00:00:00.000Z' }));
+    localStorage.writeLocalStorage(sampleEntry({ entry_id: 'too-late', timestamp: '2026-12-31T00:00:00.000Z' }));
 
     // when
     const db = report.openReadOnly();
@@ -195,9 +195,9 @@ test('formatBranchReportMarkdown returns null when every section has no data', (
 });
 
 test('formatBranchReportMarkdown renders the identity-column label in the top heading, and one heading + table per section', () => {
-  inReportSandbox((report, hook) => {
+  inReportSandbox((report, localStorage) => {
     // given
-    hook.writeLocalHistory(sampleEntry({ project: 'backend', git_project: 'backend', branch: 'send-data' }));
+    localStorage.writeLocalStorage(sampleEntry({ project: 'backend', git_project: 'backend', branch: 'send-data' }));
 
     const db = report.openReadOnly();
     let reportsData;
@@ -226,9 +226,9 @@ test('formatBranchReportMarkdown renders the identity-column label in the top he
 });
 
 test('main() --git_project with no data in the default (trailing-month) range writes no file', () => {
-  inReportSandbox((report, hook) => {
+  inReportSandbox((report, localStorage) => {
     // given — an entry far outside the default trailing-month window
-    hook.writeLocalHistory(sampleEntry({ timestamp: '2020-01-01T00:00:00.000Z' }));
+    localStorage.writeLocalStorage(sampleEntry({ timestamp: '2020-01-01T00:00:00.000Z' }));
     const logs = [];
     const origLog = console.log;
     console.log = (...args) => logs.push(args.join(' '));
@@ -247,9 +247,9 @@ test('main() --git_project with no data in the default (trailing-month) range wr
 });
 
 test('main() --git_project --from --to uses the explicit range and writes all three sections', () => {
-  inReportSandbox((report, hook) => {
+  inReportSandbox((report, localStorage) => {
     // given — well outside the default trailing-month window, but inside --from/--to
-    hook.writeLocalHistory(sampleEntry({
+    localStorage.writeLocalStorage(sampleEntry({
       project: 'backend', git_project: 'backend', branch: 'send-data', timestamp: '2020-05-15T00:00:00.000Z',
     }));
     const logs = [];
@@ -277,9 +277,9 @@ test('main() --git_project --from --to uses the explicit range and writes all th
 });
 
 test('main() --project uses `project` as the identity column, with its own label', () => {
-  inReportSandbox((report, hook) => {
+  inReportSandbox((report, localStorage) => {
     // given
-    hook.writeLocalHistory(sampleEntry({
+    localStorage.writeLocalStorage(sampleEntry({
       project: 'backend', git_project: 'backend', branch: 'send-data', timestamp: '2020-05-15T00:00:00.000Z',
     }));
     const logs = [];
@@ -302,7 +302,7 @@ test('main() --project uses `project` as the identity column, with its own label
 });
 
 test('main() with a malformed --from prints usage and exits 1, without writing local.sqlite', () => {
-  inReportSandbox((report, hook) => {
+  inReportSandbox((report, localStorage) => {
     // given
     const errors = [];
     const origError = console.error;
@@ -315,7 +315,7 @@ test('main() with a malformed --from prints usage and exits 1, without writing l
       // then
       assert.equal(process.exitCode, 1);
       assert.ok(errors.some(l => l.includes('--git_project')));
-      assert.ok(!fs.existsSync(hook.LOCAL_HISTORY_DB_PATH));
+      assert.ok(!fs.existsSync(localStorage.LOCAL_STORAGE_DB_PATH));
     } finally {
       console.error = origError;
       process.exitCode = undefined;

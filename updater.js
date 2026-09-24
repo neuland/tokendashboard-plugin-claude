@@ -770,13 +770,13 @@ async function main() {
     }
     // Non-blocking: install always copies the same files regardless of the running Node
     // (a plain fs.copyFileSync, see install() below) — it never exit(1)s or skips
-    // run()/install() over this. Local history/report's Node requirement is a pure
+    // run()/install() over this. Local storage/report's Node requirement is a pure
     // per-execution runtime check (node:sqlite, checked fresh every time a hook runs),
     // not something baked in at install time — re-running install under a newer Node
     // fixes nothing by itself, so the message must not imply that (see ADR-019).
     if (!satisfiesMinNodeVersion(process.version, pkg.engines?.node)) {
       console.error(
-        `Note: installed successfully. Local history/report need Node ` +
+        `Note: installed successfully. Local storage/report need Node ` +
         `${pkg.engines?.node ?? '>=22.13'} (node:sqlite support) in whichever terminal ` +
         `Claude Code actually runs in — that's checked fresh every time, independently ` +
         `of the Node version used for this install (you're on ${process.version} now). ` +

@@ -7,7 +7,7 @@ const path = require('path');
 const os = require('os');
 const { spawnSync } = require('child_process');
 
-const { inSandbox, inSandboxAsync, readQueue } = require('./helpers.js');
+const { inSandbox, inSandboxAsync, readQueue, loadLocalStorage } = require('./helpers.js');
 
 // A throwaway git repo on the given branch, used as `cwd` for detectBranch()/
 // writeAggregatedEntries() — real git subprocess calls over mocking, per repo convention.
@@ -25,23 +25,23 @@ function makeGitRepo(branch = 'my-branch') {
 }
 
 test('detectProject returns the basename of cwd, or null without a cwd', () => {
-  inSandbox(hook => {
+  inSandbox(() => {
     // given / when / then
-    assert.equal(hook.detectProject('/home/dev/code/tokendashboard-plugin-claude'), 'tokendashboard-plugin-claude');
-    assert.equal(hook.detectProject('/home/dev/code/'), 'code');
-    assert.equal(hook.detectProject(null), null);
-    assert.equal(hook.detectProject(undefined), null);
+    assert.equal(loadLocalStorage().detectProject('/home/dev/code/tokendashboard-plugin-claude'), 'tokendashboard-plugin-claude');
+    assert.equal(loadLocalStorage().detectProject('/home/dev/code/'), 'code');
+    assert.equal(loadLocalStorage().detectProject(null), null);
+    assert.equal(loadLocalStorage().detectProject(undefined), null);
   });
 });
 
 test('detectBranch returns the active git branch of cwd', () => {
-  inSandbox(hook => {
+  inSandbox(() => {
     // given
     const repo = makeGitRepo('receive-answer');
 
     try {
       // when / then
-      assert.equal(hook.detectBranch(repo), 'receive-answer');
+      assert.equal(loadLocalStorage().detectBranch(repo), 'receive-answer');
     } finally {
       fs.rmSync(repo, { recursive: true, force: true });
     }
@@ -49,14 +49,14 @@ test('detectBranch returns the active git branch of cwd', () => {
 });
 
 test('detectBranch returns null for a non-git directory, and without throwing', () => {
-  inSandbox(hook => {
+  inSandbox(() => {
     // given
     const notARepo = fs.mkdtempSync(path.join(os.tmpdir(), 'tup-notrepo-'));
 
     try {
       // when / then
-      assert.equal(hook.detectBranch(notARepo), null);
-      assert.equal(hook.detectBranch(null), null);
+      assert.equal(loadLocalStorage().detectBranch(notARepo), null);
+      assert.equal(loadLocalStorage().detectBranch(null), null);
     } finally {
       fs.rmSync(notARepo, { recursive: true, force: true });
     }
@@ -75,7 +75,7 @@ function addLinkedWorktree(repoDir, branch) {
 }
 
 test('resolveBaseWorktree returns the main worktree path from inside a linked worktree, and cwd unchanged for a plain repo', () => {
-  inSandbox(hook => {
+  inSandbox(() => {
     // given
     const repo = makeGitRepo('receive-answer');
     const linked = addLinkedWorktree(repo, 'worktree-agent-xyz');
@@ -86,9 +86,9 @@ test('resolveBaseWorktree returns the main worktree path from inside a linked wo
 
     try {
       // when / then — from the linked worktree, resolves back to the main one
-      assert.equal(hook.resolveBaseWorktree(linked), realRepo);
+      assert.equal(loadLocalStorage().resolveBaseWorktree(linked), realRepo);
       // and — from the main worktree itself, resolves to itself (no regression)
-      assert.equal(hook.resolveBaseWorktree(repo), realRepo);
+      assert.equal(loadLocalStorage().resolveBaseWorktree(repo), realRepo);
     } finally {
       spawnSync('git', ['worktree', 'remove', '--force', linked], { cwd: repo });
       fs.rmSync(repo, { recursive: true, force: true });
@@ -97,15 +97,15 @@ test('resolveBaseWorktree returns the main worktree path from inside a linked wo
 });
 
 test('detectProject/detectBranch resolve to the BASE worktree, not an isolated agent worktree\'s own random name/branch', () => {
-  inSandbox(hook => {
+  inSandbox(() => {
     // given
     const repo = makeGitRepo('receive-answer');
     const linked = addLinkedWorktree(repo, 'worktree-agent-xyz');
 
     try {
       // when / then — run FROM the linked worktree, but attribute to the base project
-      assert.equal(hook.detectProject(linked), path.basename(repo));
-      assert.equal(hook.detectBranch(linked), 'receive-answer');
+      assert.equal(loadLocalStorage().detectProject(linked), path.basename(repo));
+      assert.equal(loadLocalStorage().detectBranch(linked), 'receive-answer');
     } finally {
       spawnSync('git', ['worktree', 'remove', '--force', linked], { cwd: repo });
       fs.rmSync(repo, { recursive: true, force: true });
@@ -114,14 +114,14 @@ test('detectProject/detectBranch resolve to the BASE worktree, not an isolated a
 });
 
 test('project/branch detection works outside any git repository (Claude Code need not run inside one)', () => {
-  inSandbox(hook => {
+  inSandbox(() => {
     // given — a plain folder, no `git init` at all
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tup-nongit-project-'));
 
     try {
       // when / then
-      assert.equal(hook.detectProject(dir), path.basename(dir)); // still derived from cwd
-      assert.equal(hook.detectBranch(dir), null); // no repo, no crash
+      assert.equal(loadLocalStorage().detectProject(dir), path.basename(dir)); // still derived from cwd
+      assert.equal(loadLocalStorage().detectBranch(dir), null); // no repo, no crash
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -153,7 +153,7 @@ test('writeAggregatedEntries writes project/branch into local.sqlite but NEVER i
       assert.equal(queued.branch, undefined);
 
       // and — local.sqlite got the real values
-      const db = hook.openLocalHistoryDb();
+      const db = loadLocalStorage().openLocalStorageDb();
       try {
         const row = db.prepare('SELECT * FROM usage_entries').get();
         assert.equal(row.project, path.basename(repo));
@@ -189,7 +189,7 @@ test('capture() uses hookData.cwd for project/branch detection', async () => {
       await hook.capture({ transcript_path: transcriptPath, session_id: 'sess-1', cwd: repo });
 
       // then
-      const db = hook.openLocalHistoryDb();
+      const db = loadLocalStorage().openLocalStorageDb();
       try {
         const row = db.prepare('SELECT * FROM usage_entries').get();
         assert.equal(row.project, path.basename(repo));
@@ -218,10 +218,10 @@ test('capture() falls back to process.cwd() when hookData carries no cwd', async
     // then — project reflects the real process cwd (this repo checkout), proving the
     // fallback ran rather than leaving project null. Compared via detectProject (not a
     // hardcoded basename) since this repo checkout may itself be a worktree.
-    const db = hook.openLocalHistoryDb();
+    const db = loadLocalStorage().openLocalStorageDb();
     try {
       const row = db.prepare('SELECT * FROM usage_entries').get();
-      assert.equal(row.project, hook.detectProject(process.cwd()));
+      assert.equal(row.project, loadLocalStorage().detectProject(process.cwd()));
     } finally {
       db.close();
     }

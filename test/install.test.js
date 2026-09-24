@@ -418,7 +418,7 @@ test('the npx bin entry does not warn about Node version when the running Node s
     // then — install succeeds and prints no Node-version warning (can't spawn a real
     // below-minimum Node here — the comparator itself is unit-tested in semver.test.js)
     assert.equal(res.status, 0, res.stderr);
-    assert.doesNotMatch(res.stderr, /Local history\/report need Node/);
+    assert.doesNotMatch(res.stderr, /Local storage\/report need Node/);
   } finally {
     cleanup();
   }

@@ -21,7 +21,7 @@ const {
   matchPriceKey,
   priceMicroCentsForModel,
 } = require('../statusline.js');
-const { withTempHome, queueDir, errorLogPath, runStatuslineProcess, loadStatusline, inStatuslineSandbox, pricesPath, localHistoryDbPath } = require('./helpers.js');
+const { withTempHome, queueDir, errorLogPath, runStatuslineProcess, loadStatusline, inStatuslineSandbox, pricesPath, localStorageDbPath } = require('./helpers.js');
 
 // Build an assistant transcript line, mirroring aggregate.test.js's helper.
 function assistant(id, usage = {}) {
@@ -589,13 +589,13 @@ test('buildStatusLine', async t => {
     );
   });
 
-  await t.test('localHistoryOk: false appends a visible local-storage warning', () => {
+  await t.test('localStorageOk: false appends a visible local-storage warning', () => {
     // given / when
     const line = buildStatusLine({
       tokens: 500, queue: { count: 0, oldestAgeMs: 0 }, recentError: false,
       modelName: 'Claude Sonnet 5', contextPct: 10,
       version: '1.2.3', inputTokens: 100, outputTokens: 20, priceCents: 250,
-      localHistoryOk: false,
+      localStorageOk: false,
     });
 
     // then
@@ -603,13 +603,13 @@ test('buildStatusLine', async t => {
     assert.match(line, new RegExp(`Node ${process.version.replace(/\./g, '\\.')} < 22\\.13`));
   });
 
-  await t.test('localHistoryOk: true (or omitted) shows no local-storage warning', () => {
+  await t.test('localStorageOk: true (or omitted) shows no local-storage warning', () => {
     // given / when — explicit true and the default (omitted) must both stay silent
     const explicit = buildStatusLine({
       tokens: 500, queue: { count: 0, oldestAgeMs: 0 }, recentError: false,
       modelName: 'Claude Sonnet 5', contextPct: 10,
       version: '1.2.3', inputTokens: 100, outputTokens: 20, priceCents: 250,
-      localHistoryOk: true,
+      localStorageOk: true,
     });
     const defaulted = buildStatusLine({
       tokens: 500, queue: { count: 0, oldestAgeMs: 0 }, recentError: false,
@@ -623,27 +623,27 @@ test('buildStatusLine', async t => {
   });
 });
 
-test('localHistoryAvailable', () => {
+test('localStorageAvailable', () => {
   // given / when / then — this repo's own dev/test Node has node:sqlite, so this only
   // exercises the success path (mirrors semver.test.js: the below-minimum path can't be
   // exercised under this environment's real running Node either).
-  const { localHistoryAvailable } = require('../statusline.js');
-  assert.equal(localHistoryAvailable(), true);
+  const { localStorageAvailable } = require('../statusline.js');
+  assert.equal(localStorageAvailable(), true);
 });
 
-test('localHistoryEverUsed', () => {
+test('localStorageEverUsed', () => {
   inStatuslineSandbox((statusline, home) => {
     // given — a fresh sandbox with no local.sqlite yet
 
     // when / then
-    assert.equal(statusline.localHistoryEverUsed(), false);
+    assert.equal(statusline.localStorageEverUsed(), false);
 
-    // given — local.sqlite now exists (writeLocalHistory would have created it)
-    fs.mkdirSync(path.dirname(localHistoryDbPath(home)), { recursive: true });
-    fs.writeFileSync(localHistoryDbPath(home), '');
+    // given — local.sqlite now exists (writeLocalStorage would have created it)
+    fs.mkdirSync(path.dirname(localStorageDbPath(home)), { recursive: true });
+    fs.writeFileSync(localStorageDbPath(home), '');
 
     // when / then
-    assert.equal(statusline.localHistoryEverUsed(), true);
+    assert.equal(statusline.localStorageEverUsed(), true);
   });
 });
 

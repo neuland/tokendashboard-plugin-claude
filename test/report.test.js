@@ -26,9 +26,9 @@ const sampleEntry = (overrides = {}) => ({
 });
 
 test('periodReport on an empty (but existing) local.sqlite returns no rows', () => {
-  inReportSandbox((report, hook) => {
+  inReportSandbox((report, localStorage) => {
     // given — schema created, no captures ever written
-    const seedDb = hook.openLocalHistoryDb();
+    const seedDb = localStorage.openLocalStorageDb();
     seedDb.close();
 
     // when
@@ -59,7 +59,7 @@ test('openReadOnly returns null when local.sqlite does not exist yet', () => {
 
 test('main() prints a friendly message and does not throw when local.sqlite is missing', () => {
   inReportSandbox(report => {
-    // given — no plugin dir, so LOCAL_HISTORY_DB_PATH does not exist
+    // given — no plugin dir, so LOCAL_STORAGE_DB_PATH does not exist
     const logs = [];
     const origLog = console.log;
     console.log = (...args) => logs.push(args.join(' '));
@@ -120,10 +120,10 @@ test('main() with both --weekly and --monthly (ambiguous) prints usage instead o
 });
 
 test('periodReport aggregates multiple entries in the same period/project/branch into one row', () => {
-  inReportSandbox((report, hook) => {
+  inReportSandbox((report, localStorage) => {
     // given — two captures, same week, same (null) project/branch
-    hook.writeLocalHistory(sampleEntry({ entry_id: 'e1' }));
-    hook.writeLocalHistory(sampleEntry({
+    localStorage.writeLocalStorage(sampleEntry({ entry_id: 'e1' }));
+    localStorage.writeLocalStorage(sampleEntry({
       entry_id: 'e2',
       timestamp: '2026-09-12T08:00:00.000Z', // same %Y-%W week as e1
       usage: {
@@ -163,11 +163,11 @@ test('periodReport aggregates multiple entries in the same period/project/branch
 });
 
 test('periodReport keeps different periods, and different project/branch values, as separate rows', () => {
-  inReportSandbox((report, hook) => {
+  inReportSandbox((report, localStorage) => {
     // given
-    hook.writeLocalHistory(sampleEntry({ entry_id: 'e1', timestamp: '2026-09-11T10:00:00.000Z' }));
-    hook.writeLocalHistory(sampleEntry({ entry_id: 'e2', timestamp: '2026-09-01T10:00:00.000Z' })); // different week
-    hook.writeLocalHistory(sampleEntry({
+    localStorage.writeLocalStorage(sampleEntry({ entry_id: 'e1', timestamp: '2026-09-11T10:00:00.000Z' }));
+    localStorage.writeLocalStorage(sampleEntry({ entry_id: 'e2', timestamp: '2026-09-01T10:00:00.000Z' })); // different week
+    localStorage.writeLocalStorage(sampleEntry({
       entry_id: 'e3',
       timestamp: '2026-09-11T10:00:00.000Z',
       project: 'tokendashboard-plugin-claude',
@@ -195,13 +195,13 @@ test('periodReport keeps different periods, and different project/branch values,
 });
 
 test('periodReport keeps two same-named projects with different git_project as separate rows', () => {
-  inReportSandbox((report, hook) => {
+  inReportSandbox((report, localStorage) => {
     // given — two independent checkouts both named "backend" (project = folder basename,
     // meaningless for disambiguation), but distinct git_project (the enclosing repo dir)
-    hook.writeLocalHistory(sampleEntry({
+    localStorage.writeLocalStorage(sampleEntry({
       entry_id: 'e1', project: 'backend', git_project: 'client-a-backend',
     }));
-    hook.writeLocalHistory(sampleEntry({
+    localStorage.writeLocalStorage(sampleEntry({
       entry_id: 'e2', project: 'backend', git_project: 'client-b-backend',
     }));
 
@@ -222,10 +222,10 @@ test('periodReport keeps two same-named projects with different git_project as s
 });
 
 test('periodReport with the monthly format buckets entries from different weeks of the same month together', () => {
-  inReportSandbox((report, hook) => {
+  inReportSandbox((report, localStorage) => {
     // given — two entries in different %Y-W%W weeks, same calendar month
-    hook.writeLocalHistory(sampleEntry({ entry_id: 'e1', timestamp: '2026-09-01T10:00:00.000Z' }));
-    hook.writeLocalHistory(sampleEntry({ entry_id: 'e2', timestamp: '2026-09-30T10:00:00.000Z' }));
+    localStorage.writeLocalStorage(sampleEntry({ entry_id: 'e1', timestamp: '2026-09-01T10:00:00.000Z' }));
+    localStorage.writeLocalStorage(sampleEntry({ entry_id: 'e2', timestamp: '2026-09-30T10:00:00.000Z' }));
 
     // when
     const db = report.openReadOnly();
@@ -244,9 +244,9 @@ test('periodReport with the monthly format buckets entries from different weeks 
 });
 
 test('formatReportMarkdown renders a heading + table per period bucket, labeled by the given period name', () => {
-  inReportSandbox((report, hook) => {
+  inReportSandbox((report, localStorage) => {
     // given
-    hook.writeLocalHistory(sampleEntry());
+    localStorage.writeLocalStorage(sampleEntry());
 
     // when
     const db = report.openReadOnly();
@@ -304,7 +304,7 @@ test('reportFileName is ISO-timestamp + pid based and filesystem-safe (no colons
 });
 
 test('writeReport creates reports/ next to queue/ and writes the markdown as-is', () => {
-  inReportSandbox((report, hook, home) => {
+  inReportSandbox((report, localStorage, home) => {
     // given
     const markdown = '# Weekly Token Usage Report\n\n## 2026-W36\n';
 
@@ -319,9 +319,9 @@ test('writeReport creates reports/ next to queue/ and writes the markdown as-is'
 });
 
 test('main() --weekly writes a markdown report file and prints its path, without printing the report itself', () => {
-  inReportSandbox((report, hook) => {
+  inReportSandbox((report, localStorage) => {
     // given
-    hook.writeLocalHistory(sampleEntry());
+    localStorage.writeLocalStorage(sampleEntry());
     const logs = [];
     const origLog = console.log;
     console.log = (...args) => logs.push(args.join(' '));
@@ -346,9 +346,9 @@ test('main() --weekly writes a markdown report file and prints its path, without
 });
 
 test('main() --monthly writes a markdown report file labeled Monthly', () => {
-  inReportSandbox((report, hook) => {
+  inReportSandbox((report, localStorage) => {
     // given
-    hook.writeLocalHistory(sampleEntry());
+    localStorage.writeLocalStorage(sampleEntry());
     const logs = [];
     const origLog = console.log;
     console.log = (...args) => logs.push(args.join(' '));
@@ -370,9 +370,9 @@ test('main() --monthly writes a markdown report file labeled Monthly', () => {
 });
 
 test('main() on an existing but empty local.sqlite reports "no entries" and writes no file', () => {
-  inReportSandbox((report, hook) => {
+  inReportSandbox((report, localStorage) => {
     // given
-    const seedDb = hook.openLocalHistoryDb();
+    const seedDb = localStorage.openLocalStorageDb();
     seedDb.close();
     const logs = [];
     const origLog = console.log;

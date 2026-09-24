@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 
-const { inSandboxAsync, readQueue } = require('./helpers.js');
+const { inSandboxAsync, readQueue, loadLocalStorage } = require('./helpers.js');
 const { detectSkillType, aggregateUsage, ADVISOR_TYPE } = require('../hook.js');
 
 // `type` classifies who was at work for a captured row: MAIN_AGENT_TYPE for a plain
@@ -32,8 +32,8 @@ const assistantLine = (id, model, u, { stopReason = 'end_turn', iterations } = {
     },
   });
 
-function firstLocalHistoryRow(hook) {
-  const db = hook.openLocalHistoryDb();
+function firstLocalStorageRow() {
+  const db = loadLocalStorage().openLocalStorageDb();
   try {
     return db.prepare('SELECT * FROM usage_entries').get();
   } finally {
@@ -76,7 +76,7 @@ test('capture() tags a plain main-turn row with MAIN_AGENT_TYPE', async () => {
     await hook.capture({ transcript_path: transcriptPath, session_id: 'sess-1' });
 
     // then
-    assert.equal(firstLocalHistoryRow(hook).type, hook.MAIN_AGENT_TYPE);
+    assert.equal(firstLocalStorageRow().type, hook.MAIN_AGENT_TYPE);
   });
 });
 
@@ -94,7 +94,7 @@ test('capture() tags a user-typed slash-command turn with the skill name', async
     await hook.capture({ transcript_path: transcriptPath, session_id: 'sess-1' });
 
     // then
-    assert.equal(firstLocalHistoryRow(hook).type, 'improve');
+    assert.equal(firstLocalStorageRow().type, 'improve');
   });
 });
 
@@ -114,7 +114,7 @@ test('capture() skips a Claude-Code-injected isMeta entry when scanning back for
     await hook.capture({ transcript_path: transcriptPath, session_id: 'sess-1' });
 
     // then
-    assert.equal(firstLocalHistoryRow(hook).type, 'improve');
+    assert.equal(firstLocalStorageRow().type, 'improve');
   });
 });
 
@@ -128,7 +128,7 @@ test('captureSubagent tags the row with hookData.agent_type', async () => {
     await hook.captureSubagent({ agent_transcript_path: transcriptPath, session_id: 'sess-1', agent_type: 'Explore' });
 
     // then
-    assert.equal(firstLocalHistoryRow(hook).type, 'Explore');
+    assert.equal(firstLocalStorageRow().type, 'Explore');
   });
 });
 
@@ -142,7 +142,7 @@ test('captureSubagent falls back to SUBAGENT_TYPE when agent_type is missing/emp
     await hook.captureSubagent({ agent_transcript_path: transcriptPath, session_id: 'sess-1' });
 
     // then
-    assert.equal(firstLocalHistoryRow(hook).type, hook.SUBAGENT_TYPE);
+    assert.equal(firstLocalStorageRow().type, hook.SUBAGENT_TYPE);
   });
 });
 
@@ -172,7 +172,7 @@ test('writeAggregatedEntries writes the advisor type into local.sqlite, overridi
     hook.writeAggregatedEntries('sess-1', lines, 0, { type: hook.MAIN_AGENT_TYPE });
 
     // then
-    const db = hook.openLocalHistoryDb();
+    const db = loadLocalStorage().openLocalStorageDb();
     try {
       const rows = db.prepare('SELECT * FROM usage_entries ORDER BY model').all();
       assert.equal(rows.find(r => r.model === 'claude-sonnet-5').type, hook.MAIN_AGENT_TYPE);

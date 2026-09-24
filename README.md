@@ -103,9 +103,9 @@ Deleting `~/.claude/tokendashboard-plugin/statusline.js` itself is optional and 
 so a deleted-but-still-referenced file would just get silently re-downloaded on the next update check. 
 Once the `statusLine` entry is gone from `settings.json`, nothing reads the file anymore either way.
 
-## Local history & reports
+## Local storage & reports
 
-Besides the entries sent to your backend, the plugin keeps a local, per-turn usage history in `~/.claude/tokendashboard-plugin/local.sqlite` — queryable entirely offline, never sent anywhere. 
+Besides the entries sent to your backend, the plugin keeps a local, per-turn usage storage in `~/.claude/tokendashboard-plugin/local.sqlite` — queryable entirely offline, never sent anywhere. 
 Generate a Markdown report with one of:
 
 ```bash
@@ -121,7 +121,7 @@ Exactly one flag per run. Reports are written to `~/.claude/tokendashboard-plugi
 - **`--git_project`/`--project`** don't bucket by period at all — they total everything in `[--from, --to]` (default: the trailing month) and render **three tables in one report**: grouped by project alone, by project+branch (cost per feature), and by project+model+type (which models/skills drive cost). The two flags differ only in which column counts as "project": `--git_project` uses the enclosing repo directory (keeps two independently-cloned same-named checkouts apart), `--project` uses the checked-out folder's own name. Pick whichever matches how you actually organize repos — there's no default, since that's too situational to bake in.
 
 This needs Node 22.13+ (`node:sqlite`) in whichever terminal Claude Code actually runs in — checked fresh on every session, independent of the Node version used to install or update the plugin. 
-On an older Node, everything else (queue sync, statusline) keeps working as usual; local history and `report.js` just stay inactive, and `install` prints a note about it.
+On an older Node, everything else (queue sync, statusline) keeps working as usual; local storage and `report.js` just stay inactive, and `install` prints a note about it.
 
 ## How it works
 
@@ -183,7 +183,7 @@ sync yourself. See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
 
 ## Development
 
-Requires Node >= 22.13 (dev tooling; the installed plugin runs on older Node too — see [Local history & reports](#local-history--reports) above).
+Requires Node >= 22.13 (dev tooling; the installed plugin runs on older Node too — see [Local storage & reports](#local-storage--reports) above).
 
 ```bash
 node updater.js install --api-base-url <url> --repo-raw-base-url <url>  # install the hook and register the hooks in ~/.claude/settings.json

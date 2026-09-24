@@ -16,9 +16,9 @@ const CONFIG_PATH = path.join(PLUGIN_DIR, 'config.json');
 // schema guards against reading a cache written by a hook.js one converge ahead of us.
 const PRICES_CACHE_PATH = path.join(PLUGIN_DIR, 'prices.json');
 const PRICE_SCHEMA_VERSION = 1;
-// Written by hook.js's writeLocalHistory; read-only here, only to
+// Written by hook.js's writeLocalStorage; read-only here, only to
 // check existence — never opened, so this file works regardless of node:sqlite support.
-const LOCAL_HISTORY_DB_PATH = path.join(PLUGIN_DIR, 'local.sqlite');
+const LOCAL_STORAGE_DB_PATH = path.join(PLUGIN_DIR, 'local.sqlite');
 
 // Anthropic list prices, cents per million tokens; hardcoded default, overridable per
 // model by the cached table (see ADR-017). Source of truth: .claude/claude_prices.csv —
@@ -280,11 +280,11 @@ function formatPct(pct) {
   return `${color}${text}${reset}`;
 }
 
-// Local history/report depend on node:sqlite (Node >=22.13). This can fail even on a
+// Local storage/report depend on node:sqlite (Node >=22.13). This can fail even on a
 // machine where the plugin was installed under a new-enough Node, if the *current* shell
 // is running an older Node (e.g. via nvm) — hook.js then silently skips every row,
-// so the statusline is the only place a user would ever find out their history has a gap.
-function localHistoryAvailable() {
+// so the statusline is the only place a user would ever find out their storage has a gap.
+function localStorageAvailable() {
   try {
     require('node:sqlite');
     return true;
@@ -295,8 +295,8 @@ function localHistoryAvailable() {
 
 // Only warn when the feature has actually produced data before — a user who has never
 // been on a new-enough Node never had this feature and shouldn't see a warning about it.
-function localHistoryEverUsed() {
-  return fs.existsSync(LOCAL_HISTORY_DB_PATH);
+function localStorageEverUsed() {
+  return fs.existsSync(LOCAL_STORAGE_DB_PATH);
 }
 
 // ANSI-colored ●
@@ -330,7 +330,7 @@ function formatAge(ms) {
 
 function buildStatusLine({
   tokens, incomplete, queue, recentError, modelName, contextPct,
-  version, inputTokens, outputTokens, priceCents, localHistoryOk = true,
+  version, inputTokens, outputTokens, priceCents, localStorageOk = true,
 }) {
   const tok = `${incomplete ? '≥' : ''}${formatTokens(tokens)} token`;
   let syncSegment;
@@ -345,7 +345,7 @@ function buildStatusLine({
 
   const bar = formatProgressBar(contextPct);
   const pctDisplay = formatPct(contextPct);
-  const historyWarning = localHistoryOk
+  const storageWarning = localStorageOk
     ? ''
     : ` · \x1b[31m⚠ local storage off\x1b[0m (Node ${process.version} < 22.13)`;
 
@@ -356,7 +356,7 @@ function buildStatusLine({
     + `${marker}${formatTokens(inputTokens)} ↑ / ${marker}${formatTokens(outputTokens)} ↓ · `
     + `${marker}${formatPrice(priceCents)}`;
 
-  return `${modelName} · ${syncSegment} · context window: ${bar} ${pctDisplay}${historyWarning} \n${priceLine}`;
+  return `${modelName} · ${syncSegment} · context window: ${bar} ${pctDisplay}${storageWarning} \n${priceLine}`;
 }
 
 // --- Main ---
@@ -382,10 +382,10 @@ async function main() {
   const modelName = formatModelName(input.model?.display_name);
   const contextPct = normalizeUsedPct(input.context_window?.used_percentage);
   const version = readPluginVersion();
-  const localHistoryOk = !localHistoryEverUsed() || localHistoryAvailable();
+  const localStorageOk = !localStorageEverUsed() || localStorageAvailable();
   process.stdout.write(buildStatusLine({
     tokens, incomplete, queue, recentError, modelName, contextPct,
-    version, inputTokens, outputTokens, priceCents, localHistoryOk,
+    version, inputTokens, outputTokens, priceCents, localStorageOk,
   }));
 }
 
@@ -408,9 +408,9 @@ module.exports = {
   formatPrice,
   dot,
   buildStatusLine,
-  localHistoryAvailable,
-  localHistoryEverUsed,
-  LOCAL_HISTORY_DB_PATH,
+  localStorageAvailable,
+  localStorageEverUsed,
+  LOCAL_STORAGE_DB_PATH,
   matchPriceKey,
   priceMicroCentsForModel,
   readPluginVersion,

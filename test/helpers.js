@@ -9,6 +9,7 @@ const HOOK_PATH = require.resolve('../hook.js');
 const UPDATER_PATH = require.resolve('../updater.js');
 const STATUSLINE_PATH = require.resolve('../statusline.js');
 const REPORT_PATH = require.resolve('../report.js');
+const LOCAL_STORAGE_PATH = require.resolve('../local-storage.js');
 
 // Create an isolated temp directory and point $HOME at it, so the plugin's
 // ~/.claude/* path constants (computed at module load from os.homedir()) resolve
@@ -45,7 +46,18 @@ function withTempHome(opts = {}) {
 // current $HOME. Must be called AFTER withTempHome().
 function loadHook() {
   delete require.cache[HOOK_PATH];
+  // hook.js lazy-requires local-storage.js at call time (not at module load), so a stale
+  // cached copy bound to a PREVIOUS test's $HOME would silently write there instead of
+  // the current sandbox — clear it here too, every time hook.js itself is freshly loaded.
+  delete require.cache[LOCAL_STORAGE_PATH];
   return require(HOOK_PATH);
+}
+
+// Load a fresh copy of local-storage.js so its module-level path constants pick up the
+// current $HOME. Must be called AFTER withTempHome().
+function loadLocalStorage() {
+  delete require.cache[LOCAL_STORAGE_PATH];
+  return require(LOCAL_STORAGE_PATH);
 }
 
 const pluginDir = home => path.join(home, '.claude', 'tokendashboard-plugin');
@@ -61,7 +73,7 @@ const legacyHookDest = home => path.join(home, '.claude', 'hooks', 'token-usage-
 const statuslineDest = home => path.join(pluginDir(home), 'statusline.js');
 // report.js lives alongside hook.js/statusline.js under the plugin dir
 const reportDest = home => path.join(pluginDir(home), 'report.js');
-const localHistoryDbPath = home => path.join(pluginDir(home), 'local.sqlite');
+const localStorageDbPath = home => path.join(pluginDir(home), 'local.sqlite');
 const configPath = home => path.join(pluginDir(home), 'config.json');
 const errorLogPath = home => path.join(pluginDir(home), 'error.log');
 const pricesPath = home => path.join(pluginDir(home), 'prices.json');
@@ -92,16 +104,16 @@ function loadReport() {
   return require(REPORT_PATH);
 }
 
-// Run fn against freshly loaded report.js AND hook.js modules sharing one isolated temp
-// $HOME — hook.js is only used to seed local.sqlite via its real writeLocalHistory/
-// openLocalHistoryDb.js.
-// fn receives (report, hook, home).
+// Run fn against freshly loaded report.js AND local-storage.js modules sharing one
+// isolated temp $HOME — local-storage.js is only used to seed local.sqlite via its real
+// writeLocalStorage/openLocalStorageDb.
+// fn receives (report, localStorage, home).
 function inReportSandbox(fn) {
   const { home, cleanup } = withTempHome();
-  const hook = loadHook();
+  const localStorage = loadLocalStorage();
   const report = loadReport();
   try {
-    return fn(report, hook, home);
+    return fn(report, localStorage, home);
   } finally {
     cleanup();
   }
@@ -179,8 +191,7 @@ function inSandbox(fn) {
 // Async variant of inSandbox. fn receives (hook, home).
 async function inSandboxAsync(fn) {
   const { home, cleanup } = withTempHome();
-  delete require.cache[HOOK_PATH];
-  const hook = require(HOOK_PATH);
+  const hook = loadHook();
   try {
     return await fn(hook, home);
   } finally {
@@ -255,6 +266,7 @@ function runStatuslineProcess({ home, input = '' } = {}) {
 module.exports = {
   withTempHome,
   loadHook,
+  loadLocalStorage,
   loadUpdater,
   loadStatusline,
   loadReport,
@@ -277,7 +289,7 @@ module.exports = {
   legacyHookDest,
   statuslineDest,
   reportDest,
-  localHistoryDbPath,
+  localStorageDbPath,
   configPath,
   TEST_API_BASE_URL,
   errorLogPath,
