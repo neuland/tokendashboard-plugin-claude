@@ -9,6 +9,10 @@ set -euo pipefail
 # shows status "no_permissions").
 sudo chown -R vscode:nvm "$(npm config get prefix)/lib/node_modules"
 
+# The bind-mounted workspace shows up as owned by root inside the container, so git
+# (running as vscode) refuses it with "detected dubious ownership" until it is trusted.
+git config --global --add safe.directory "$PWD"
+
 # Seed ~/.claude.json once from the host's file (mounted read-only at a separate path,
 # not bind-mounted onto ~/.claude.json itself) so Claude Code skips the theme/subscription
 # prompts on every fresh container. A one-time copy, not a live sync: Claude Code writes

@@ -12,6 +12,4 @@ RUN apt-get update && apt-get install -y \
     jq \
  && localedef -i en_US -f UTF-8 UTF-8
 
-WORKDIR /workspaces/tokendashboard-plugin-claude
-
 USER vscode
